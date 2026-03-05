@@ -1,0 +1,6 @@
+# requirements.txt
+python-dotenv
+telethon
+gpxpy
+google-generativeai
+requests
