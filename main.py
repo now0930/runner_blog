@@ -50,9 +50,12 @@ class GeminiAnalyzer:
             logger.error("GEMINI_API_KEY not found in environment variables.")
             raise ValueError("GEMINI_API_KEY is required")
         
-        genai.configure(api_key=self.api_key)
+        #여기 나중에 원상 복구
+        #genai.configure(api_key=self.api_key)
+        # 기존 genai.configure 대신 Client 객체 생성
+        #self.client = genai.Client(api_key=self.api_key)
         # Use a more robust model if available and needed
-        self.model = genai.GenerativeModel('gemini-1.5-flash-latest') 
+        #self.model = genai.GenerativeModel('gemini-1.5-flash-latest') 
 
     def analyze_gpx_data(self, gpx_stats):
         """
