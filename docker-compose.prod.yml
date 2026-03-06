@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  runner-app:
+    # Inherit all configurations from the base service
+    <<: *app_base_service
+
+    # Override/add configurations specific to Telegram Bot production
+    container_name: telegram_bot_prod
+    # Command to run main.py, which will then run indefinitely due to asyncio.run and run_until_disconnected
+    command: ["python", "main.py"]
+    restart: always # Ensure the container restarts automatically if it stops or the daemon crashes
+    # No ports are exposed by default as this is a bot, not a web service.
+
+# Inherit networks and volumes from the base file
+networks:
+  runner_network:
+    <<: *runner_network
+
+volumes:
+  telegram_session_data:
+    <<: *telegram_session_data
+  telegram_downloads_data:
+    <<: *telegram_downloads_data

@@ -12,35 +12,36 @@ import google.generativeai as genai
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class ConfigManager:
     def __init__(self):
-        # API credentials from environment variables
         self.API_ID = os.getenv("API_ID")
         self.API_HASH = os.getenv("API_HASH")
         self.PHONE_NUMBER = os.getenv("PHONE_NUMBER")
 
-        # Directories for persistence, defaulting to /app paths for Docker context.
-        # These will be mapped to host volumes by docker-compose.
         self.DOWNLOADS_DIR = os.getenv("DOWNLOADS_DIR", "/app/downloads")
         self.SESSION_DIR = os.getenv("SESSION_DIR", "/app/session")
 
-        # Ensure these directories exist, both for Docker and local runs.
         os.makedirs(self.DOWNLOADS_DIR, exist_ok=True)
         os.makedirs(self.SESSION_DIR, exist_ok=True)
 
-        # Define the full path for the Telethon session file.
         self.TELEGRAM_SESSION_FILE = os.path.join(self.SESSION_DIR, "telegram.session")
         
-        # Chat ID to listen to
         self.CHAT_ID = os.getenv("CHAT_ID")
         if not self.CHAT_ID:
             logger.error("CHAT_ID not found in environment variables.")
             raise ValueError("CHAT_ID is required for event handling")
 
-        print("Hey! Configuration loaded.") # For initial debugging
+        self.WORDPRESS_URL = os.getenv("WORDPRESS_URL")
+        self.WORDPRESS_USERNAME = os.getenv("WORDPRESS_USERNAME")
+        self.WORDPRESS_PASSWORD = os.getenv("WORDPRESS_PASSWORD")
+
+        if not all([self.WORDPRESS_URL, self.WORDPRESS_USERNAME, self.WORDPRESS_PASSWORD]):
+            logger.warning("WordPress credentials not fully set. WordPress publishing will be disabled.")
+
+        logger.info("Configuration loaded successfully.")
 
 class GeminiAnalyzer:
     def __init__(self):
@@ -50,28 +51,45 @@ class GeminiAnalyzer:
             raise ValueError("GEMINI_API_KEY is required")
         
         genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        # Use a more robust model if available and needed
+        self.model = genai.GenerativeModel('gemini-1.5-flash-latest') 
 
     def analyze_gpx_data(self, gpx_stats):
         """
         Sends GPX statistics to Gemini for analysis.
         """
-        prompt = f"Analyze these GPX statistics: {gpx_stats}. Provide a brief summary of the activity."
+        if not gpx_stats:
+            return "No GPX stats provided for analysis."
+
+        prompt = f"""Analyze these GPX statistics:
+Distance: {gpx_stats.get('distance', 'N/A'):.2f} meters
+Duration: {gpx_stats.get('duration', 'N/A'):.2f} seconds
+
+Provide a brief, engaging summary of the activity, suitable for a blog post.
+If possible, suggest a title for the blog post.
+Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"""
+        
         try:
             response = self.model.generate_content(prompt)
-            return response.text
+            # Attempt to parse the response as JSON
+            import json
+            analysis_result = json.loads(response.text)
+            return analysis_result
+        except json.JSONDecodeError:
+            logger.error(f"Failed to decode JSON response from Gemini. Raw response: {response.text}")
+            return {"title": "GPX Activity Analysis", "summary": response.text} # Fallback to raw text
         except Exception as e:
             logger.error(f"Error analyzing with Gemini: {e}")
-            return None
+            return {"title": "GPX Activity Analysis", "summary": f"An error occurred during analysis: {e}"}
 
 class GpxProcessor:
     def process(self, file_path):
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, 'r', encoding='utf-8') as f:
                 gpx = gpxpy.parse(f)
             
             total_distance = 0
-            total_duration = 0
+            total_duration_seconds = 0
             
             for track in gpx.tracks:
                 for segment in track.segments:
@@ -80,128 +98,243 @@ class GpxProcessor:
                         start_time = segment.points[0].time
                         end_time = segment.points[-1].time
                         if start_time and end_time:
-                            total_duration += (end_time - start_time).total_seconds()
+                            total_duration_seconds += (end_time - start_time).total_seconds()
             
-            return {"distance": total_distance, "duration": total_duration}
+            return {"distance": total_distance, "duration": total_duration_seconds}
+        except FileNotFoundError:
+            logger.error(f"GPX file not found at {file_path}")
+            return None
+        except gpxpy.gpx.GPXParseException as e:
+            logger.error(f"Error parsing GPX file {file_path}: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Error processing GPX file: {e}")
+            logger.error(f"An unexpected error occurred processing GPX file {file_path}: {e}")
             return None
 
 class TelegramManager:
-    def __init__(self, config: ConfigManager, download_dir: str, session_file: str):
+    def __init__(self, config: ConfigManager):
         self.config = config
-        self.download_dir = download_dir
-        self.session_file = session_file # Store the session file path
-        self.chat_id = config.CHAT_ID # Store the chat_id
-
-        # Initialize the Telegram client with the session file path
+        
         self.client = TelegramClient(
-            self.session_file,
+            self.config.TELEGRAM_SESSION_FILE,
             self.config.API_ID,
             self.config.API_HASH
         )
+        self.target_chat_id = int(self.config.CHAT_ID) # Ensure it's an integer
 
     async def connect(self):
         await self.client.start(phone=self.config.PHONE_NUMBER)
-        print("Hey! Connected to Telegram.")
+        if not await self.client.is_user_authorized():
+            logger.error("Telegram client is not authorized. Please check your phone number and session file.")
+            # Potentially prompt for code/password here if not handled by client.start logic
+        else:
+            logger.info("Telegram client connected and authorized.")
+
+    async def download_gpx_file(self, message):
+        if not message.document:
+            logger.warning("No document found in message.")
+            return None
+        
+        # Check if it's a GPX file
+        if message.document.mime_type not in ('application/gpx+xml', 'application/xml') and not message.document.attributes[0].file_name.lower().endswith('.gpx'):
+            logger.warning(f"Skipping non-GPX file: {message.document.attributes[0].file_name}")
+            return None
+
+        file_name = message.document.attributes[0].file_name
+        file_path = os.path.join(self.config.DOWNLOADS_DIR, file_name)
+        
+        try:
+            logger.info(f"Downloading {file_name} to {self.config.DOWNLOADS_DIR}.")
+            await message.download_media(file=file_path)
+            logger.info(f"Successfully downloaded {file_name}.")
+            return file_path
+        except Exception as e:
+            logger.error(f"Failed to download file {file_name}: {e}")
+            return None
 
 class WordPressPublisher:
-    def __init__(self, wordpress_url, username, password):
-        self.base_url = wordpress_url
-        self.username = username
-        self.password = password
-        self.api_url = f"{self.base_url}/wp-json/wp/v2/posts"
+    def __init__(self, config: ConfigManager):
+        self.config = config
+        if not all([self.config.WORDPRESS_URL, self.config.WORDPRESS_USERNAME, self.config.WORDPRESS_PASSWORD]):
+            self.is_enabled = False
+            logger.warning("WordPress publishing is disabled due to missing credentials.")
+            return
+        
+        self.is_enabled = True
+        self.base_url = self.config.WORDPRESS_URL
+        self.username = self.config.WORDPRESS_USERNAME
+        self.password = self.config.WORDPRESS_PASSWORD
+        self.posts_api_url = f"{self.base_url}/wp-json/wp/v2/posts"
+        self.media_api_url = f"{self.base_url}/wp-json/wp/v2/media"
 
-    def create_post(self, title, content, status='publish'):
+    def _get_auth_headers(self):
+        # For WordPress REST API with basic auth, use a tuple for requests
+        return (self.username, self.password)
+
+    async def upload_media(self, file_path):
         """
-        Creates a new post on WordPress.
+        Uploads a file to WordPress media library and returns its ID and URL.
         """
-        auth = (self.username, self.password)
+        if not self.is_enabled:
+            logger.warning("WordPress publisher is not enabled. Cannot upload media.")
+            return None, None
+
+        file_name = os.path.basename(file_path)
+        try:
+            with open(file_path, 'rb') as f:
+                files = {'file': (file_name, f)}
+                # Set Content-Disposition header for WordPress to recognize filename
+                headers = {
+                    'Content-Disposition': f'attachment; filename="{file_name}"'
+                }
+                
+                logger.info(f"Uploading {file_name} to WordPress media library...")
+                response = requests.post(self.media_api_url, auth=self._get_auth_headers(), files=files, headers=headers)
+                response.raise_for_status()
+                media_data = response.json()
+                media_id = media_data.get('id')
+                media_url = media_data.get('source')
+                logger.info(f"Successfully uploaded media. ID: {media_id}, URL: {media_url}")
+                return media_id, media_url
+        except FileNotFoundError:
+            logger.error(f"Media file not found at {file_path}")
+            return None, None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error uploading media to WordPress: {e}")
+            if response is not None:
+                logger.error(f"WordPress API response: {response.text}")
+            return None, None
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during media upload: {e}")
+            return None, None
+
+    def create_post(self, title, content, status='publish', media_id=None):
+        """
+        Creates a new post on WordPress, optionally associating media.
+        """
+        if not self.is_enabled:
+            logger.warning("WordPress publisher is not enabled. Cannot create post.")
+            return None
+
         payload = {
             'title': title,
             'content': content,
             'status': status,
         }
+        if media_id:
+            payload['featured_media'] = media_id # Link the media as featured image
+
         try:
-            response = requests.post(self.api_url, auth=auth, json=payload)
-            response.raise_for_status()  # Raise an exception for bad status codes
+            logger.info(f"Creating WordPress post: '{title}'")
+            response = requests.post(self.posts_api_url, auth=self._get_auth_headers(), json=payload)
+            response.raise_for_status()
             post_data = response.json()
-            logger.info(f"Successfully created WordPress post: {post_data['link']}")
+            logger.info(f"Successfully created WordPress post: {post_data.get('link', 'N/A')}")
             return post_data
         except requests.exceptions.RequestException as e:
             logger.error(f"Error creating WordPress post: {e}")
+            if response is not None:
+                logger.error(f"WordPress API response: {response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during post creation: {e}")
             return None
 
-async def main():
-    config = ConfigManager()
-    
-    telegram_manager = TelegramManager(config, config.DOWNLOADS_DIR, config.TELEGRAM_SESSION_FILE)
-    gpx_processor = GpxProcessor()
-    gemini_analyzer = GeminiAnalyzer()
-    
-    # Fetch WordPress credentials from environment variables
-    wp_url = os.getenv("WORDPRESS_URL")
-    wp_username = os.getenv("WORDPRESS_USERNAME")
-    wp_password = os.getenv("WORDPRESS_PASSWORD")
+# Global instances (for simplicity in event handler access)
+# These will be initialized in main() and passed implicitly or accessed via closure.
+_config = None
+_telegram_manager = None
+_gpx_processor = None
+_gemini_analyzer = None
+_wordpress_publisher = None
 
-    if not all([wp_url, wp_username, wp_password]):
-        logger.error("WordPress credentials (WORDPRESS_URL, WORDPRESS_USERNAME, WORDPRESS_PASSWORD) are required.")
-        return # Exit if WordPress credentials are missing
+# Event handler for new messages
+async def handle_new_message(event):
+    message = event.message
+    logger.debug(f"Received message from chat ID: {message.chat_id}")
 
-    wordpress_publisher = WordPressPublisher(wp_url, wp_username, wp_password)
-
-    await telegram_manager.connect()
-
-    # Define the event handler function
-    async def message_handler(event):
-        message = event.message
+    # Ensure the message is from the target chat and contains a document
+    if message.chat_id == _config.target_chat_id and message.document:
+        logger.info(f"Processing message with document from chat {_config.CHAT_ID}.")
         
-        # Check if the message is from the correct chat and contains a document
-        if message.chat_id == int(config.CHAT_ID) and message.document:
-            # Check if the document is a GPX file
-            if message.document.mime_type == 'application/gpx+xml':
-                file_path = await telegram_manager.download_gpx_file(message)
-                if file_path:
-                    stats = gpx_processor.process(file_path)
-                    if stats:
-                        print(f"Processed {file_path}: {stats}")
-                        
-                        analysis = gemini_analyzer.analyze_gpx_data(stats)
-                        if analysis:
-                            print(f"Gemini Analysis: {analysis}")
-
-                            # Prepare content for WordPress post
-                            post_title = f"GPX Activity: {os.path.basename(file_path)}"
-                            post_content = f"<h2>Activity Summary</h2>"
-                            post_content += f"<p>Distance: {stats.get('distance', 'N/A'):.2f} meters</p>"
-                            post_content += f"<p>Duration: {stats.get('duration', 'N/A'):.2f} seconds</p>"
-                            post_content += f"<h3>Gemini Analysis:</h3><p>{analysis}</p>"
-                            
-                            # TODO: Implement logic to upload GPX file to a media server and get its URL
-                            # For now, we'll just post the text analysis.
-                            # If you upload the file, you'd get a URL like:
-                            # gpx_file_url = await upload_gpx_to_media_server(file_path) 
-                            # post_content += f'<p><a href="{gpx_file_url}">Download GPX</a></p>'
-                            
-                            if wordpress_publisher:
-                                wordpress_publisher.create_post(post_title, post_content)
-                            else:
-                                print("Skipping WordPress post: Publisher not initialized due to missing credentials.")
+        gpx_file_path = await _telegram_manager.download_gpx_file(message)
+        
+        if gpx_file_path:
+            logger.info(f"GPX file downloaded to: {gpx_file_path}")
+            
+            # Process GPX
+            gpx_stats = _gpx_processor.process(gpx_file_path)
+            
+            if gpx_stats:
+                logger.info(f"GPX stats processed: {gpx_stats}")
+                
+                # Analyze with Gemini
+                gemini_analysis = _gemini_analyzer.analyze_gpx_data(gpx_stats)
+                
+                if gemini_analysis:
+                    logger.info(f"Gemini analysis completed. Title: {gemini_analysis.get('title')}")
+                    
+                    # Upload GPX to WordPress Media Library
+                    media_id, media_url = None, None
+                    if _wordpress_publisher and _wordpress_publisher.is_enabled:
+                        media_id, media_url = await _wordpress_publisher.upload_media(gpx_file_path)
                     else:
-                        print("Skipping message: Failed to process GPX file.")
+                        logger.warning("WordPress publisher not enabled, skipping media upload.")
+                    
+                    # Prepare content for WordPress post
+                    post_title = gemini_analysis.get('title', f"GPX Activity: {os.path.basename(gpx_file_path)}")
+                    post_summary = gemini_analysis.get('summary', 'No summary generated.')
+                    
+                    post_content = f"<h2>Activity Summary</h2>"
+                    post_content += f"<p>Distance: {gpx_stats.get('distance', 'N/A'):.2f} meters</p>"
+                    post_content += f"<p>Duration: {gpx_stats.get('duration', 'N/A'):.2f} seconds</p>"
+                    post_content += f"<h3>Analysis:</h3><p>{post_summary}</p>"
+                    
+                    if media_url:
+                        post_content += f'<p><a href="{media_url}">View GPX File</a></p>'
+                    
+                    # Create WordPress post
+                    if _wordpress_publisher and _wordpress_publisher.is_enabled:
+                        _wordpress_publisher.create_post(post_title, post_content, media_id=media_id)
+                    else:
+                        logger.warning("WordPress publisher not enabled, skipping post creation.")
                 else:
-                    print("Skipping message: Failed to download GPX file.")
+                    logger.warning("Gemini analysis failed or returned no data.")
             else:
-                print("Skipping message: Not a GPX file.")
+                logger.warning("Failed to process GPX stats.")
         else:
-            print("Skipping message: Not from target chat or no document.")
+            logger.warning("Failed to download GPX file.")
+    # else:
+        # logger.debug("Message ignored: not from target chat or not a document.")
 
-    # Register the event handler
-    telegram_manager.client.add_event_handler(message_handler, events.NewMessage(chats=[config.CHAT_ID]))
+async def main():
+    global _config, _telegram_manager, _gpx_processor, _gemini_analyzer, _wordpress_publisher
 
-    print(f"Bot started. Listening for GPX files in chat ID: {config.CHAT_ID}")
+    _config = ConfigManager()
+    
+    _telegram_manager = TelegramManager(_config)
+    _gpx_processor = GpxProcessor()
+    _gemini_analyzer = GeminiAnalyzer()
+    _wordpress_publisher = WordPressPublisher(_config)
+
+    await _telegram_manager.connect()
+
+    # Register the event handler for new messages in the specified chat
+    _telegram_manager.client.add_event_handler(
+        handle_new_message,
+        events.NewMessage(chats=[_config.CHAT_ID]) # Ensure CHAT_ID is set correctly and is an int
+    )
+
+    logger.info(f"Bot started. Listening for GPX files in chat ID: {_config.CHAT_ID}")
+    
     # Keep the client running to listen for events
-    await telegram_manager.client.run_until_disconnected()
+    await _telegram_manager.client.run_until_disconnected()
+    logger.info("Bot disconnected.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped manually.")
+    except Exception as e:
+        logger.critical(f"An unhandled critical error occurred: {e}", exc_info=True)

@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  aider_runner:
+    # Inherit all configurations from the base service
+    <<: *app_base_service
+
+    # Override/add configurations specific to Aider development
+    container_name: aider_runner_dev
+    # Use user with current UID/GID to avoid permission issues with host volumes
+    user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
+    tty: true
+    stdin_open: true
+    working_dir: /app
+    command:
+      # Command to run Aider
+      - "--model"
+      - "${GEMINI_MODEL}"
+      - "--editor-model"
+      - "${MAIN_MODEL}"
+      - "--architect"
+      - "--auto-commits"
+      - "--yes-always"
+    # For interactive development, we usually don't want it to auto-restart
+    restart: "no"
+    ports:
+      - "8000:8000" # Expose port if Aider runs a web server (not typical for CLI interaction)
+
+# Inherit networks and volumes from the base file
+networks:
+  runner_network:
+    <<: *runner_network
+
+volumes:
+  telegram_session_data:
+    <<: *telegram_session_data
+  telegram_downloads_data:
+    <<: *telegram_downloads_data
