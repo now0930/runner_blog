@@ -4,6 +4,7 @@ services:
   aider_runner:
     # Inherit all configurations from the base service
     extends:
+      file: docker-compose.base.yml
       service: app_base_service
 
     # Override/add configurations specific to Aider development
@@ -30,10 +31,10 @@ services:
 # Inherit networks and volumes from the base file
 networks:
   runner_network:
-    driver: bridge
+    driver: bridge # Keep the driver definition
 
 volumes:
   telegram_session_data:
-    driver: local
+    driver: local # Keep the driver definition
   telegram_downloads_data:
-    driver: local
+    driver: local # Keep the driver definition
