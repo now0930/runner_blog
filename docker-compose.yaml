@@ -23,7 +23,7 @@ services:
       - telegram_downloads_data:/app/downloads
       # telegram_session_data 볼륨은 컨테이너 내부의 /app/session에 마운트됩니다.
       - telegram_session_data:/app/session
-    # 애플리케이션이 인터넷에 액세스해야 하는 경우 제한되지 않도록 합니다.
+    # 애플리케이션 인터넷에 액세스해야 하는 경우 제한되지 않도록 합니다.
     # networks:
     #   - default
 
