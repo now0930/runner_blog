@@ -12,7 +12,7 @@ services:
     volumes:
       # 호스트의 경로:컨테이너 내부의 경로
       - ./session:/app/session
-
+      - .:/app  # 현재 폴더(.)를 컨테이너의 /app 폴더와 연결
     # Override/add configurations specific to Telegram Bot production
     container_name: telegram_bot_prod
     # Command to run main.py, which will then run indefinitely due to asyncio.run and run_until_disconnected

@@ -1,5 +1,6 @@
 import os
 import asyncio
+import json
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
 import gpxpy
@@ -69,12 +70,15 @@ If possible, suggest a title for the blog post.
 Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"""
         
         try:
-            response = self.client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
+            response = self.client.models.generate_content(model='gemini-1.5-flash-001', contents=prompt)
             # Attempt to parse the response as JSON
-            import json
+            if not response.text:
+                logger.error("Gemini API returned empty response.")
+                return {"title": "GPX Activity Analysis", "summary": "No response received from Gemini API."}
+            
             analysis_result = json.loads(response.text)
             return analysis_result
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             logger.error(f"Failed to decode JSON response from Gemini. Raw response: {response.text}")
             return {"title": "GPX Activity Analysis", "summary": response.text} # Fallback to raw text
         except Exception as e:
