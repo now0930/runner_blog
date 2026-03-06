@@ -319,6 +319,9 @@ async def main():
 
     await _telegram_manager.connect()
 
+    # Force cache dialogs immediately after connection to ensure server-side chat info is available
+    await _telegram_manager.client.get_dialogs()
+
     # Fetch the chat entity immediately after client is connected
     try:
         chat_id_str = int(_config.CHAT_ID)
@@ -333,7 +336,7 @@ async def main():
     # Register the event handler with the chat entity object
     _telegram_manager.client.add_event_handler(
         handle_new_message,
-        events.NewMessage(chats=[_target_chat]) # Use the fetched entity object here
+        events.NewMessage(chats=[_target_chat.id]) # Use the fetched entity object here
     )
 
     logger.info(f"Bot started. Listening for GPX files in chat ID: {_config.CHAT_ID}")
