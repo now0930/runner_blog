@@ -1,0 +1,11 @@
+Analyze these GPX statistics for a blog post:
+
+Distance: {distance} meters
+Duration: {duration} seconds
+Pace per km: {pace_per_km} min/km
+Speed: {speed} km/h
+Weather: {weather}
+
+Provide a brief, engaging summary of the activity, suitable for a blog post.
+If possible, suggest a title for the blog post.
+Format the output as JSON: {"title": "Suggested Title", "summary": "Blog post summary"}
