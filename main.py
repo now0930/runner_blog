@@ -501,7 +501,7 @@ class WordPressPublisher:
                 response.raise_for_status()
                 media_data = response.json()
                 media_id = media_data.get('id')
-                media_url = media_data.get('source')
+                media_url = media_data.get('source_url')
                 logger.info(f"Successfully uploaded media. ID: {media_id}, URL: {media_url}")
                 return media_id, media_url
         except FileNotFoundError:
@@ -561,7 +561,7 @@ _analyzer = None
 # Event handler for new messages
 async def handle_new_message(event):
     message = event.message
-    # 모든 메시지를 받되, 우리가 원하는 CHAT_ID가 아니면 즉시 무시
+    # 모든 메시지를 받되, 우리가 원하는 CHAT_ID 가 아니면 즉시 무시
     if message.chat_id != int(_config.CHAT_ID):
         return
     
