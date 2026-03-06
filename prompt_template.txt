@@ -8,4 +8,4 @@ Weather: {weather}
 
 Provide a brief, engaging summary of the activity, suitable for a blog post.
 If possible, suggest a title for the blog post.
-Format the output as JSON: {"title": "Suggested Title", "summary": "Blog post summary"}
+Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}
