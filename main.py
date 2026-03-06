@@ -33,7 +33,7 @@ class ConfigManager:
         # Define the full path for the Telethon session file.
         self.TELEGRAM_SESSION_FILE = os.path.join(self.SESSION_DIR, "telegram.session")
 
-        print("Hey there! Configuration loaded.") # For initial debugging
+        print("Hey! Configuration loaded.") # For initial debugging
 
 class TelegramManager:
     def __init__(self, config: ConfigManager, download_dir: str, session_file: str):
@@ -50,7 +50,7 @@ class TelegramManager:
 
     async def connect(self):
         await self.client.start(phone=self.config.PHONE_NUMBER)
-        print("Hey there! Connected to Telegram.")
+        print("Hey! Connected to Telegram.")
 
     async def get_messages(self, chat_name, limit=10):
         try:
@@ -72,7 +72,7 @@ class TelegramManager:
                     # Download the file
                     file_path = os.path.join(self.download_dir, file_name)
                     await self.client.download_media(message, file_path)
-                    print(f"Hey there! Downloaded GPX file: {file_path}")
+                    print(f"Hey! Downloaded GPX file: {file_path}")
                     return file_path
             return None
         except Exception as e:
