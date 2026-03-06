@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  runner-app:
+    build: .
+    container_name: runner-app
+    environment:
+      # Telegram API Credentials
+      API_ID: ${API_ID}
+      API_HASH: ${API_HASH}
+      PHONE_NUMBER: ${PHONE_NUMBER}
+      # Define internal paths for Docker, these will be mapped to host volumes
+      # No need to set DOWNLOADS_DIR and SESSION_DIR here explicitly
+      # as ConfigManager defaults to /app/downloads and /app/session
+      # if these ENV vars are not provided.
+    volumes:
+      # Map host directories for persistent storage
+      # telegram_downloads_data volume will be mounted to /app/downloads inside the container
+      - telegram_downloads_data:/app/downloads
+      # telegram_session_data volume will be mounted to /app/session inside the container
+      - telegram_session_data:/app/session
+    # If your application needs to access the internet, ensure this is not restricted
+    # networks:
+    #   - default
+
+volumes:
+  # Define named volumes for persistent data
+  telegram_downloads_data:
+    driver: local
+  telegram_session_data:
+    driver: local
