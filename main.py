@@ -106,12 +106,16 @@ class TelegramManager:
 
 async def main():
     config = ConfigManager()
+    
+    # Get chat name from environment variable or use default
+    chat_name = os.getenv("CHAT_NAME", "your_chat_name")
+    
     telegram_manager = TelegramManager(config, config.DOWNLOADS_DIR, config.TELEGRAM_SESSION_FILE)
 
     await telegram_manager.connect()
 
     # Example: Get messages from a specific chat
-    messages = await telegram_manager.get_messages('your_chat_name', limit=5)
+    messages = await telegram_manager.get_messages(chat_name, limit=5)
 
     for message in messages:
         file_path = await telegram_manager.download_gpx_file(message)
