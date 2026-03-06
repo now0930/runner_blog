@@ -125,6 +125,33 @@ class TelegramManager:
             logger.error(f"Error downloading GPX file: {e}")
             return None
 
+class WordPressPublisher:
+    def __init__(self, wordpress_url, username, password):
+        self.base_url = wordpress_url
+        self.username = username
+        self.password = password
+        self.api_url = f"{self.base_url}/wp-json/wp/v2/posts"
+
+    def create_post(self, title, content, status='publish'):
+        """
+        Creates a new post on WordPress.
+        """
+        auth = (self.username, self.password)
+        payload = {
+            'title': title,
+            'content': content,
+            'status': status,
+        }
+        try:
+            response = requests.post(self.api_url, auth=auth, json=payload)
+            response.raise_for_status()  # Raise an exception for bad status codes
+            post_data = response.json()
+            logger.info(f"Successfully created WordPress post: {post_data['link']}")
+            return post_data
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error creating WordPress post: {e}")
+            return None
+
 async def main():
     config = ConfigManager()
     
