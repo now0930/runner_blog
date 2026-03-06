@@ -70,7 +70,13 @@ If possible, suggest a title for the blog post.
 Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"""
         
         try:
-            response = self.client.models.generate_content(model='gemini-1.5-flash-001', contents=prompt)
+            # Define model names with fallback logic
+            model_name = 'gemini-2.5-flash-lite'
+            # Try to use the preferred model, fall back to gemini-1.5-flash if needed
+            # Note: The actual model availability check would require API call or try-except
+            # For now, we'll use the preferred model and handle errors
+            
+            response = self.client.models.generate_content(model=model_name, contents=prompt)
             # Attempt to parse the response as JSON
             if not response.text:
                 logger.error("Gemini API returned empty response.")
@@ -82,7 +88,27 @@ Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post s
             logger.error(f"Failed to decode JSON response from Gemini. Raw response: {response.text}")
             return {"title": "GPX Activity Analysis", "summary": response.text} # Fallback to raw text
         except Exception as e:
-            logger.error(f"Error analyzing with Gemini: {e}")
+            # Check for 404 errors and log the attempted model name
+            if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                if e.response.status_code == 404:
+                    logger.error(f"Model '{model_name}' not found (404 error). Attempted model: {model_name}. Falling back to gemini-1.5-flash.")
+                    # Retry with fallback model
+                    fallback_model = 'gemini-1.5-flash'
+                    try:
+                        response = self.client.models.generate_content(model=fallback_model, contents=prompt)
+                        if not response.text:
+                            logger.error("Gemini API returned empty response for fallback model.")
+                            return {"title": "GPX Activity Analysis", "summary": "No response received from Gemini API."}
+                        
+                        analysis_result = json.loads(response.text)
+                        return analysis_result
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback model '{fallback_model}' also failed: {fallback_error}")
+                        return {"title": "GPX Activity Analysis", "summary": f"An error occurred during analysis: {fallback_error}"}
+                else:
+                    logger.error(f"Error status code: {e.response.status_code}. Error: {e}")
+            else:
+                logger.error(f"Error analyzing with Gemini: {e}")
             return {"title": "GPX Activity Analysis", "summary": f"An error occurred during analysis: {e}"}
 
 class GpxProcessor:
