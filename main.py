@@ -9,6 +9,7 @@ from requests import post
 from dotenv import load_dotenv
 import logging
 from google import genai
+import urllib.parse
 
 # Load environment variables from .env file
 load_dotenv()
@@ -604,7 +605,15 @@ async def handle_new_message(event):
                     post_content += f"<h3>Analysis:</h3><p>{post_summary}</p>"
                     
                     if media_url:
-                        post_content += f'<p><a href="{media_url}">View GPX File</a></p>'
+                        # Extract path from media_url excluding the domain
+                        parsed_url = urllib.parse.urlparse(media_url)
+                        gpx_path = parsed_url.path
+                        
+                        # Create shortcode
+                        shortcode = f'[sgpx gpx="{gpx_path}"]'
+                        
+                        # Append shortcode to post_content
+                        post_content += f'<p>{shortcode}</p>'
                     
                     # Create WordPress post
                     if _wordpress_publisher and _wordpress_publisher.is_enabled:
