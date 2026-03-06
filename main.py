@@ -319,15 +319,15 @@ async def main():
 
     await _telegram_manager.connect()
 
-    # Fetch the chat entity using its ID after client is connected
+    # Fetch the chat entity immediately after client is connected
     try:
-        # Use the hardcoded chat ID or environment variable
-        chat_id_str = os.getenv("TARGET_CHAT_ID", "-1003737503370")
+        chat_id_str = _config.CHAT_ID
         target_chat = await _telegram_manager.client.get_entity(chat_id_str)
         logger.info(f"Successfully fetched chat entity: {target_chat.title} (ID: {target_chat.id})")
         _target_chat = target_chat
     except Exception as e:
         logger.error(f"Error fetching chat entity: {e}. Please ensure the chat ID is correct and accessible.")
+        logger.critical("Cannot start bot without valid chat entity. Exiting.")
         return # Exit if the chat entity cannot be found.
 
     # Register the event handler with the chat entity object
