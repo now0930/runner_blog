@@ -3,10 +3,10 @@ import asyncio
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
 import gpxpy
-import requests
+from requests import post
 from dotenv import load_dotenv
 import logging
-import google.genai as genai
+from google import genai
 
 # Load environment variables from .env file
 load_dotenv()
@@ -50,12 +50,7 @@ class GeminiAnalyzer:
             logger.error("GEMINI_API_KEY not found in environment variables.")
             raise ValueError("GEMINI_API_KEY is required")
         
-        #여기 나중에 원상 복구
-        #genai.configure(api_key=self.api_key)
-        # 기존 genai.configure 대신 Client 객체 생성
-        #self.client = genai.Client(api_key=self.api_key)
-        # Use a more robust model if available and needed
-        #self.model = genai.GenerativeModel('gemini-1.5-flash-latest') 
+        self.client = genai.Client(api_key=self.api_key)
 
     def analyze_gpx_data(self, gpx_stats):
         """
@@ -73,7 +68,7 @@ If possible, suggest a title for the blog post.
 Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"""
         
         try:
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
             # Attempt to parse the response as JSON
             import json
             analysis_result = json.loads(response.text)
@@ -192,7 +187,7 @@ class WordPressPublisher:
                 }
                 
                 logger.info(f"Uploading {file_name} to WordPress media library...")
-                response = requests.post(self.media_api_url, auth=self._get_auth_headers(), files=files, headers=headers)
+                response = post(self.media_api_url, auth=self._get_auth_headers(), files=files, headers=headers)
                 response.raise_for_status()
                 media_data = response.json()
                 media_id = media_data.get('id')
@@ -229,7 +224,7 @@ class WordPressPublisher:
 
         try:
             logger.info(f"Creating WordPress post: '{title}'")
-            response = requests.post(self.posts_api_url, auth=self._get_auth_headers(), json=payload)
+            response = post(self.posts_api_url, auth=self._get_auth_headers(), json=payload)
             response.raise_for_status()
             post_data = response.json()
             logger.info(f"Successfully created WordPress post: {post_data.get('link', 'N/A')}")
