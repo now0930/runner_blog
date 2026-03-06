@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   aider_runner:
+    image: aider:latest
     # Inherit all configurations from the base service
     extends:
       file: docker-compose.base.yml
@@ -11,13 +12,25 @@ services:
     container_name: aider_runner_dev
     # Use user with current UID/GID to avoid permission issues with host volumes
     user: "${CURRENT_UID:-1000}:${CURRENT_GID:-1000}"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OLLAMA_API_BASE=${OLLAMA_BASE}
+      # HOME을 /app으로 설정해야 Aider가 /app/.aider 폴더를 정상적으로 사용합니다.
+      - HOME=/app
+ 
     tty: true
     stdin_open: true
+    volumes:
+      # 호스트의 현재 폴더를 컨테이너의 /app에 바로 연결합니다.
+      - /home/now0930/runner_blog:/app
+      # 설정 저장용 폴더 (호스트의 .aider_config -> 컨테이너의 /app/.aider)
+      - /home/now0930/runner_blog/.aider_config:/app/.aider
+
     working_dir: /app
     command:
       # Command to run Aider
       - "--model"
-      - "${GEMINI_MODEL}"
+      - "${GEMINI_MODEL}"  # 또는 gemini-1.5-flash
       - "--editor-model"
       - "${MAIN_MODEL}"
       - "--architect"
@@ -38,3 +51,4 @@ volumes:
     driver: local # Keep the driver definition
   telegram_downloads_data:
     driver: local # Keep the driver definition
+
