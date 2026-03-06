@@ -246,6 +246,7 @@ _telegram_manager = None
 _gpx_processor = None
 _gemini_analyzer = None
 _wordpress_publisher = None
+_target_chat = None
 
 # Event handler for new messages
 async def handle_new_message(event):
@@ -307,7 +308,7 @@ async def handle_new_message(event):
         # logger.debug("Message ignored: not from target chat or not a document.")
 
 async def main():
-    global _config, _telegram_manager, _gpx_processor, _gemini_analyzer, _wordpress_publisher
+    global _config, _telegram_manager, _gpx_processor, _gemini_analyzer, _wordpress_publisher, _target_chat
 
     _config = ConfigManager()
     
@@ -318,22 +319,21 @@ async def main():
 
     await _telegram_manager.connect()
 
-    # Fetch the chat entity using its ID
+    # Fetch the chat entity using its ID after client is connected
     try:
-        # Fetch the chat entity using its ID
-        chat_entity = await _telegram_manager.client.get_entity(_config.CHAT_ID)
-        logger.info(f"Successfully fetched chat entity: {chat_entity.title} (ID: {chat_entity.id})")
-    except ValueError as e:
-        logger.error(f"Error fetching chat entity: {e}. Please ensure the CHAT_ID is correct and accessible.")
-        return # Exit if the chat entity cannot be found.
+        # Use the hardcoded chat ID or environment variable
+        chat_id_str = os.getenv("TARGET_CHAT_ID", "-1003737503370")
+        target_chat = await _telegram_manager.client.get_entity(chat_id_str)
+        logger.info(f"Successfully fetched chat entity: {target_chat.title} (ID: {target_chat.id})")
+        _target_chat = target_chat
     except Exception as e:
-        logger.error(f"An unexpected error occurred while fetching chat entity: {e}")
-        return # Exit on unexpected errors
+        logger.error(f"Error fetching chat entity: {e}. Please ensure the chat ID is correct and accessible.")
+        return # Exit if the chat entity cannot be found.
 
-    # Register the event handler for new messages in the specified chat
+    # Register the event handler with the chat entity object
     _telegram_manager.client.add_event_handler(
         handle_new_message,
-        events.NewMessage(chats=[chat_entity]) # Use the fetched entity object here
+        events.NewMessage(chats=[_target_chat]) # Use the fetched entity object here
     )
 
     logger.info(f"Bot started. Listening for GPX files in chat ID: {_config.CHAT_ID}")
