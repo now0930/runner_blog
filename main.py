@@ -254,7 +254,7 @@ async def handle_new_message(event):
     logger.debug(f"Received message from chat ID: {message.chat_id}")
 
     # Ensure the message is from the target chat and contains a document
-    if message.chat_id == _config.target_chat_id and message.document:
+    if message.chat_id == int(_config.target_chat_id) and message.document:
         logger.info(f"Processing message with document from chat {_config.CHAT_ID}.")
         
         gpx_file_path = await _telegram_manager.download_gpx_file(message)
@@ -321,7 +321,7 @@ async def main():
 
     # Fetch the chat entity immediately after client is connected
     try:
-        chat_id_str = _config.CHAT_ID
+        chat_id_str = int(_config.CHAT_ID)
         target_chat = await _telegram_manager.client.get_entity(chat_id_str)
         logger.info(f"Successfully fetched chat entity: {target_chat.title} (ID: {target_chat.id})")
         _target_chat = target_chat
