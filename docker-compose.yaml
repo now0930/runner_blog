@@ -4,22 +4,26 @@ services:
   runner-app:
     build: .
     container_name: runner-app
+    # 이 라인을 추가하여 .env 파일에서 환경 변수를 명시적으로 로드합니다.
+    env_file:
+      - .env
     environment:
       # Telegram API Credentials
+      # 이 변수들은 이제 env_file을 통해 로드되지만,
+      # 어떤 변수들이 사용되는지 문서화하기 위해 여기에 유지합니다.
       API_ID: ${API_ID}
       API_HASH: ${API_HASH}
       PHONE_NUMBER: ${PHONE_NUMBER}
-      # Define internal paths for Docker, these will be mapped to host volumes
-      # No need to set DOWNLOADS_DIR and SESSION_DIR here explicitly
-      # as ConfigManager defaults to /app/downloads and /app/session
-      # if these ENV vars are not provided.
+      # Docker용 내부 경로를 정의합니다. 이 경로는 호스트 볼륨에 매핑됩니다.
+      # ConfigManager가 DOWNLOADS_DIR 및 SESSION_DIR 환경 변수가 제공되지 않으면
+      # /app/downloads 및 /app/session을 기본값으로 사용하므로 여기에 명시적으로 설정할 필요가 없습니다.
     volumes:
-      # Map host directories for persistent storage
-      # telegram_downloads_data volume will be mounted to /app/downloads inside the container
+      # 영구 저장을 위한 호스트 디렉토리를 매핑합니다.
+      # telegram_downloads_data 볼륨은 컨테이너 내부의 /app/downloads에 마운트됩니다.
       - telegram_downloads_data:/app/downloads
-      # telegram_session_data volume will be mounted to /app/session inside the container
+      # telegram_session_data 볼륨은 컨테이너 내부의 /app/session에 마운트됩니다.
       - telegram_session_data:/app/session
-    # If your application needs to access the internet, ensure this is not restricted
+    # 애플리케이션이 인터넷에 액세스해야 하는 경우 제한되지 않도록 합니다.
     # networks:
     #   - default
 
