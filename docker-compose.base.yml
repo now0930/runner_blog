@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  app_base_service: &app_base_service
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      # Default environment variables. These can be overridden by specific compose files.
+      # Ensure these are present in your .env file:
+      # API_ID, API_HASH, PHONE_NUMBER, GEMINI_API_KEY, OLLAMA_BASE, GEMINI_MODEL, MAIN_MODEL, CHAT_ID, WORDPRESS_URL, WORDPRESS_USERNAME, WORDPRESS_PASSWORD
+      # For Telethon
+      API_ID: ${API_ID}
+      API_HASH: ${API_HASH}
+      PHONE_NUMBER: ${PHONE_NUMBER}
+      CHAT_ID: ${CHAT_ID}
+      # For Gemini/Ollama
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OLLAMA_BASE: ${OLLAMA_API_BASE}
+      GEMINI_MODEL: ${GEMINI_MODEL}
+      MAIN_MODEL: ${MAIN_MODEL}
+      # For WordPress
+      WORDPRESS_URL: ${WORDPRESS_URL}
+      WORDPRESS_USERNAME: ${WORDPRESS_USERNAME}
+      WORDPRESS_PASSWORD: ${WORDPRESS_PASSWORD}
+
+      # Paths inside the container
+      DOWNLOADS_DIR: /app/downloads
+      SESSION_DIR: /app/session
+      TELEGRAM_SESSION_FILE: /app/session/telegram.session # Explicitly define the session file path
+
+    volumes:
+      # Persist Telegram session and downloaded files
+      - telegram_session_data:/app/session # Use named volumes
+      - telegram_downloads_data:/app/downloads # Use named volumes
+    
+    networks:
+      - runner_network
+
+volumes:
+  telegram_session_data: &telegram_session_data
+    driver: local
+  telegram_downloads_data: &telegram_downloads_data
+    driver: local
+
+networks:
+  runner_network: &runner_network
+    driver: bridge
