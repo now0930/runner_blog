@@ -6,6 +6,7 @@ import gpxpy
 import requests
 from dotenv import load_dotenv
 import logging
+import google.generativeai as genai
 
 # Load environment variables from .env file
 load_dotenv()
@@ -34,6 +35,28 @@ class ConfigManager:
         self.TELEGRAM_SESSION_FILE = os.path.join(self.SESSION_DIR, "telegram.session")
 
         print("Hey! Configuration loaded.") # For initial debugging
+
+class GeminiAnalyzer:
+    def __init__(self):
+        self.api_key = os.getenv("GEMINI_API_KEY")
+        if not self.api_key:
+            logger.error("GEMINI_API_KEY not found in environment variables.")
+            raise ValueError("GEMINI_API_KEY is required")
+        
+        genai.configure(api_key=self.api_key)
+        self.model = genai.GenerativeModel('gemini-pro')
+
+    def analyze_gpx_data(self, gpx_stats):
+        """
+        Sends GPX statistics to Gemini for analysis.
+        """
+        prompt = f"Analyze these GPX statistics: {gpx_stats}. Provide a brief summary of the activity."
+        try:
+            response = self.model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            logger.error(f"Error analyzing with Gemini: {e}")
+            return None
 
 class GpxProcessor:
     def process(self, file_path):
@@ -109,7 +132,8 @@ async def main():
     chat_name = os.getenv("CHAT_NAME", "your_chat_name")
     
     telegram_manager = TelegramManager(config, config.DOWNLOADS_DIR, config.TELEGRAM_SESSION_FILE)
-    gpx_processor = GpxProcessor() # Instantiate the processor
+    gpx_processor = GpxProcessor()
+    gemini_analyzer = GeminiAnalyzer() # Instantiate the analyzer
 
     await telegram_manager.connect()
 
@@ -122,6 +146,10 @@ async def main():
             stats = gpx_processor.process(file_path) # Use the processor
             if stats:
                 print(f"Processed {file_path}: {stats}")
+                # Use Gemini to analyze the stats
+                analysis = gemini_analyzer.analyze_gpx_data(stats)
+                if analysis:
+                    print(f"Gemini Analysis: {analysis}")
 
 if __name__ == "__main__":
     asyncio.run(main())
