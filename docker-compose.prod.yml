@@ -3,9 +3,15 @@ version: '3.8'
 services:
   runner-app:
     # Inherit all configurations from the base service
+    # Login시점 패스워드 입력 필요!
+    stdin_open: true # 중요!
+    tty: true        # 중요!
     extends:
       file: docker-compose.base.yml
       service: app_base_service
+    volumes:
+      # 호스트의 경로:컨테이너 내부의 경로
+      - ./session:/app/session
 
     # Override/add configurations specific to Telegram Bot production
     container_name: telegram_bot_prod
