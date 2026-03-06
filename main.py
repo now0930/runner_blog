@@ -251,61 +251,62 @@ _target_chat = None
 # Event handler for new messages
 async def handle_new_message(event):
     message = event.message
-    logger.debug(f"Received message from chat ID: {message.chat_id}")
+    # 모든 메시지를 받되, 우리가 원하는 CHAT_ID가 아니면 즉시 무시
+    if message.chat_id != int(_config.CHAT_ID):
+        return
+    
+    if not message.document:
+        return
 
-    # Ensure the message is from the target chat and contains a document
-    if message.chat_id == int(_config.target_chat_id) and message.document:
-        logger.info(f"Processing message with document from chat {_config.CHAT_ID}.")
+    logger.info(f"Processing GPX from target chat: {message.chat_id}")
+    
+    gpx_file_path = await _telegram_manager.download_gpx_file(message)
+    
+    if gpx_file_path:
+        logger.info(f"GPX file downloaded to: {gpx_file_path}")
         
-        gpx_file_path = await _telegram_manager.download_gpx_file(message)
+        # Process GPX
+        gpx_stats = _gpx_processor.process(gpx_file_path)
         
-        if gpx_file_path:
-            logger.info(f"GPX file downloaded to: {gpx_file_path}")
+        if gpx_stats:
+            logger.info(f"GPX stats processed: {gpx_stats}")
             
-            # Process GPX
-            gpx_stats = _gpx_processor.process(gpx_file_path)
+            # Analyze with Gemini
+            gemini_analysis = _gemini_analyzer.analyze_gpx_data(gpx_stats)
             
-            if gpx_stats:
-                logger.info(f"GPX stats processed: {gpx_stats}")
+            if gemini_analysis:
+                logger.info(f"Gemini analysis completed. Title: {gemini_analysis.get('title')}")
                 
-                # Analyze with Gemini
-                gemini_analysis = _gemini_analyzer.analyze_gpx_data(gpx_stats)
-                
-                if gemini_analysis:
-                    logger.info(f"Gemini analysis completed. Title: {gemini_analysis.get('title')}")
-                    
-                    # Upload GPX to WordPress Media Library
-                    media_id, media_url = None, None
-                    if _wordpress_publisher and _wordpress_publisher.is_enabled:
-                        media_id, media_url = await _wordpress_publisher.upload_media(gpx_file_path)
-                    else:
-                        logger.warning("WordPress publisher not enabled, skipping media upload.")
-                    
-                    # Prepare content for WordPress post
-                    post_title = gemini_analysis.get('title', f"GPX Activity: {os.path.basename(gpx_file_path)}")
-                    post_summary = gemini_analysis.get('summary', 'No summary generated.')
-                    
-                    post_content = f"<h2>Activity Summary</h2>"
-                    post_content += f"<p>Distance: {gpx_stats.get('distance', 'N/A'):.2f} meters</p>"
-                    post_content += f"<p>Duration: {gpx_stats.get('duration', 'N/A'):.2f} seconds</p>"
-                    post_content += f"<h3>Analysis:</h3><p>{post_summary}</p>"
-                    
-                    if media_url:
-                        post_content += f'<p><a href="{media_url}">View GPX File</a></p>'
-                    
-                    # Create WordPress post
-                    if _wordpress_publisher and _wordpress_publisher.is_enabled:
-                        _wordpress_publisher.create_post(post_title, post_content, media_id=media_id)
-                    else:
-                        logger.warning("WordPress publisher not enabled, skipping post creation.")
+                # Upload GPX to WordPress Media Library
+                media_id, media_url = None, None
+                if _wordpress_publisher and _wordpress_publisher.is_enabled:
+                    media_id, media_url = await _wordpress_publisher.upload_media(gpx_file_path)
                 else:
-                    logger.warning("Gemini analysis failed or returned no data.")
+                    logger.warning("WordPress publisher not enabled, skipping media upload.")
+                
+                # Prepare content for WordPress post
+                post_title = gemini_analysis.get('title', f"GPX Activity: {os.path.basename(gpx_file_path)}")
+                post_summary = gemini_analysis.get('summary', 'No summary generated.')
+                
+                post_content = f"<h2>Activity Summary</h2>"
+                post_content += f"<p>Distance: {gpx_stats.get('distance', 'N/A'):.2f} meters</p>"
+                post_content += f"<p>Duration: {gpx_stats.get('duration', 'N/A'):.2f} seconds</p>"
+                post_content += f"<h3>Analysis:</h3><p>{post_summary}</p>"
+                
+                if media_url:
+                    post_content += f'<p><a href="{media_url}">View GPX File</a></p>'
+                
+                # Create WordPress post
+                if _wordpress_publisher and _wordpress_publisher.is_enabled:
+                    _wordpress_publisher.create_post(post_title, post_content, media_id=media_id)
+                else:
+                    logger.warning("WordPress publisher not enabled, skipping post creation.")
             else:
-                logger.warning("Failed to process GPX stats.")
+                logger.warning("Gemini analysis failed or returned no data.")
         else:
-            logger.warning("Failed to download GPX file.")
-    # else:
-        # logger.debug("Message ignored: not from target chat or not a document.")
+            logger.warning("Failed to process GPX stats.")
+    else:
+        logger.warning("Failed to download GPX file.")
 
 async def main():
     global _config, _telegram_manager, _gpx_processor, _gemini_analyzer, _wordpress_publisher, _target_chat
@@ -333,10 +334,10 @@ async def main():
         logger.critical("Cannot start bot without valid chat entity. Exiting.")
         return # Exit if the chat entity cannot be found.
 
-    # Register the event handler with the chat entity object
+    # Register the event handler without chats parameter to avoid ValueError
     _telegram_manager.client.add_event_handler(
         handle_new_message,
-        events.NewMessage(chats=[_target_chat.id]) # Use the fetched entity object here
+        events.NewMessage()
     )
 
     logger.info(f"Bot started. Listening for GPX files in chat ID: {_config.CHAT_ID}")
