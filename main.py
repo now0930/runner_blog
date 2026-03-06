@@ -3,6 +3,7 @@ import asyncio
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
 import gpxpy
+import requests
 from requests import post
 from dotenv import load_dotenv
 import logging
