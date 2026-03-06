@@ -605,9 +605,8 @@ async def handle_new_message(event):
                     post_content += f"<h3>Analysis:</h3><p>{post_summary}</p>"
                     
                     if media_url:
-                        # Extract path from media_url excluding the domain
-                        parsed_url = urllib.parse.urlparse(media_url)
-                        gpx_path = parsed_url.path
+                        # Use gpx_file_path directly as the absolute server path
+                        gpx_path = gpx_file_path
                         
                         # Create shortcode
                         shortcode = f'[sgpx gpx="{gpx_path}"]'
