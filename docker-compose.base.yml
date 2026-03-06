@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  app_base_service: &app_base_service
+  app_base_service:
     build:
       context: .
       dockerfile: Dockerfile
@@ -40,11 +40,11 @@ services:
       - runner_network
 
 volumes:
-  telegram_session_data: &telegram_session_data
+  telegram_session_data:
     driver: local
-  telegram_downloads_data: &telegram_downloads_data
+  telegram_downloads_data:
     driver: local
 
 networks:
-  runner_network: &runner_network
+  runner_network:
     driver: bridge
