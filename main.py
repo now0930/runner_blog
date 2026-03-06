@@ -35,6 +35,29 @@ class ConfigManager:
 
         print("Hey! Configuration loaded.") # For initial debugging
 
+class GpxProcessor:
+    def process(self, file_path):
+        try:
+            with open(file_path, 'r') as f:
+                gpx = gpxpy.parse(f)
+            
+            total_distance = 0
+            total_duration = 0
+            
+            for track in gpx.tracks:
+                for segment in track.segments:
+                    total_distance += segment.length_2d()
+                    if len(segment.points) > 1:
+                        start_time = segment.points[0].time
+                        end_time = segment.points[-1].time
+                        if start_time and end_time:
+                            total_duration += (end_time - start_time).total_seconds()
+            
+            return {"distance": total_distance, "duration": total_duration}
+        except Exception as e:
+            logger.error(f"Error processing GPX file: {e}")
+            return None
+
 class TelegramManager:
     def __init__(self, config: ConfigManager, download_dir: str, session_file: str):
         self.config = config
@@ -79,31 +102,6 @@ class TelegramManager:
             logger.error(f"Error downloading GPX file: {e}")
             return None
 
-    async def process_gpx_file(self, file_path):
-        try:
-            with open(file_path, 'r') as f:
-                gpx = gpxpy.parse(f)
-            
-            # Process GPX data
-            total_distance = 0
-            total_duration = 0
-            for track in gpx.tracks:
-                for segment in track.segments:
-                    for point in segment.points:
-                        # Example processing - you can add more complex logic here
-                        pass
-                    # Calculate distance and duration for this segment
-                    # (This is a simplified example)
-                    if len(segment.points) > 1:
-                        total_distance += segment.length_2d()
-                        total_duration += (segment.points[-1].time - segment.points[0].time).total_seconds()
-            
-            print(f"Total distance: {total_distance} meters")
-            print(f"Total duration: {total_duration} seconds")
-            
-        except Exception as e:
-            logger.error(f"Error processing GPX file: {e}")
-
 async def main():
     config = ConfigManager()
     
@@ -111,6 +109,7 @@ async def main():
     chat_name = os.getenv("CHAT_NAME", "your_chat_name")
     
     telegram_manager = TelegramManager(config, config.DOWNLOADS_DIR, config.TELEGRAM_SESSION_FILE)
+    gpx_processor = GpxProcessor() # Instantiate the processor
 
     await telegram_manager.connect()
 
@@ -120,7 +119,9 @@ async def main():
     for message in messages:
         file_path = await telegram_manager.download_gpx_file(message)
         if file_path:
-            await telegram_manager.process_gpx_file(file_path)
+            stats = gpx_processor.process(file_path) # Use the processor
+            if stats:
+                print(f"Processed {file_path}: {stats}")
 
 if __name__ == "__main__":
     asyncio.run(main())
