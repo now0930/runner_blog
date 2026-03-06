@@ -1,6 +1,6 @@
 import os
 import asyncio
-from telethon import TelegramClient
+from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
 import gpxpy
 import requests
@@ -33,6 +33,12 @@ class ConfigManager:
 
         # Define the full path for the Telethon session file.
         self.TELEGRAM_SESSION_FILE = os.path.join(self.SESSION_DIR, "telegram.session")
+        
+        # Chat ID to listen to
+        self.CHAT_ID = os.getenv("CHAT_ID")
+        if not self.CHAT_ID:
+            logger.error("CHAT_ID not found in environment variables.")
+            raise ValueError("CHAT_ID is required for event handling")
 
         print("Hey! Configuration loaded.") # For initial debugging
 
@@ -86,6 +92,7 @@ class TelegramManager:
         self.config = config
         self.download_dir = download_dir
         self.session_file = session_file # Store the session file path
+        self.chat_id = config.CHAT_ID # Store the chat_id
 
         # Initialize the Telegram client with the session file path
         self.client = TelegramClient(
@@ -97,33 +104,6 @@ class TelegramManager:
     async def connect(self):
         await self.client.start(phone=self.config.PHONE_NUMBER)
         print("Hey! Connected to Telegram.")
-
-    async def get_messages(self, chat_name, limit=10):
-        try:
-            # Get the chat entity
-            chat = await self.client.get_entity(chat_name)
-            # Fetch messages
-            messages = await self.client.get_messages(chat, limit=limit)
-            return messages
-        except Exception as e:
-            logger.error(f"Error fetching messages: {e}")
-            return []
-
-    async def download_gpx_file(self, message):
-        try:
-            # Check if the message has a document
-            if message.document:
-                file_name = message.document.attributes[0].file_name
-                if file_name.endswith('.gpx'):
-                    # Download the file
-                    file_path = os.path.join(self.download_dir, file_name)
-                    await self.client.download_media(message, file_path)
-                    print(f"Hey! Downloaded GPX file: {file_path}")
-                    return file_path
-            return None
-        except Exception as e:
-            logger.error(f"Error downloading GPX file: {e}")
-            return None
 
 class WordPressPublisher:
     def __init__(self, wordpress_url, username, password):
@@ -155,28 +135,73 @@ class WordPressPublisher:
 async def main():
     config = ConfigManager()
     
-    # Get chat name from environment variable or use default
-    chat_name = os.getenv("CHAT_NAME", "your_chat_name")
-    
     telegram_manager = TelegramManager(config, config.DOWNLOADS_DIR, config.TELEGRAM_SESSION_FILE)
     gpx_processor = GpxProcessor()
-    gemini_analyzer = GeminiAnalyzer() # Instantiate the analyzer
+    gemini_analyzer = GeminiAnalyzer()
+    
+    # Fetch WordPress credentials from environment variables
+    wp_url = os.getenv("WORDPRESS_URL")
+    wp_username = os.getenv("WORDPRESS_USERNAME")
+    wp_password = os.getenv("WORDPRESS_PASSWORD")
+
+    if not all([wp_url, wp_username, wp_password]):
+        logger.error("WordPress credentials (WORDPRESS_URL, WORDPRESS_USERNAME, WORDPRESS_PASSWORD) are required.")
+        return # Exit if WordPress credentials are missing
+
+    wordpress_publisher = WordPressPublisher(wp_url, wp_username, wp_password)
 
     await telegram_manager.connect()
 
-    # Example: Get messages from a specific chat
-    messages = await telegram_manager.get_messages(chat_name, limit=5)
+    # Define the event handler function
+    async def message_handler(event):
+        message = event.message
+        
+        # Check if the message is from the correct chat and contains a document
+        if message.chat_id == int(config.CHAT_ID) and message.document:
+            # Check if the document is a GPX file
+            if message.document.mime_type == 'application/gpx+xml':
+                file_path = await telegram_manager.download_gpx_file(message)
+                if file_path:
+                    stats = gpx_processor.process(file_path)
+                    if stats:
+                        print(f"Processed {file_path}: {stats}")
+                        
+                        analysis = gemini_analyzer.analyze_gpx_data(stats)
+                        if analysis:
+                            print(f"Gemini Analysis: {analysis}")
 
-    for message in messages:
-        file_path = await telegram_manager.download_gpx_file(message)
-        if file_path:
-            stats = gpx_processor.process(file_path) # Use the processor
-            if stats:
-                print(f"Processed {file_path}: {stats}")
-                # Use Gemini to analyze the stats
-                analysis = gemini_analyzer.analyze_gpx_data(stats)
-                if analysis:
-                    print(f"Gemini Analysis: {analysis}")
+                            # Prepare content for WordPress post
+                            post_title = f"GPX Activity: {os.path.basename(file_path)}"
+                            post_content = f"<h2>Activity Summary</h2>"
+                            post_content += f"<p>Distance: {stats.get('distance', 'N/A'):.2f} meters</p>"
+                            post_content += f"<p>Duration: {stats.get('duration', 'N/A'):.2f} seconds</p>"
+                            post_content += f"<h3>Gemini Analysis:</h3><p>{analysis}</p>"
+                            
+                            # TODO: Implement logic to upload GPX file to a media server and get its URL
+                            # For now, we'll just post the text analysis.
+                            # If you upload the file, you'd get a URL like:
+                            # gpx_file_url = await upload_gpx_to_media_server(file_path) 
+                            # post_content += f'<p><a href="{gpx_file_url}">Download GPX</a></p>'
+                            
+                            if wordpress_publisher:
+                                wordpress_publisher.create_post(post_title, post_content)
+                            else:
+                                print("Skipping WordPress post: Publisher not initialized due to missing credentials.")
+                    else:
+                        print("Skipping message: Failed to process GPX file.")
+                else:
+                    print("Skipping message: Failed to download GPX file.")
+            else:
+                print("Skipping message: Not a GPX file.")
+        else:
+            print("Skipping message: Not from target chat or no document.")
+
+    # Register the event handler
+    telegram_manager.client.add_event_handler(message_handler, events.NewMessage(chats=[config.CHAT_ID]))
+
+    print(f"Bot started. Listening for GPX files in chat ID: {config.CHAT_ID}")
+    # Keep the client running to listen for events
+    await telegram_manager.client.run_until_disconnected()
 
 if __name__ == "__main__":
     asyncio.run(main())
