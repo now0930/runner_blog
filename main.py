@@ -40,13 +40,31 @@ class ConfigManager:
         self.WORDPRESS_USERNAME = os.getenv("WORDPRESS_USERNAME")
         self.WORDPRESS_PASSWORD = os.getenv("WORDPRESS_PASSWORD")
 
+        # Debug logging for WordPress settings
+        logger.info(f"WordPress URL loaded: {self.WORDPRESS_URL}")
+        if self.WORDPRESS_USERNAME:
+            logger.info(f"WordPress Username loaded: {self.WORDPRESS_USERNAME}")
+        else:
+            logger.warning("WordPress Username is None or empty.")
+        
+        if self.WORDPRESS_PASSWORD:
+            # Mask password for security - show first 2 characters only
+            masked_password = self.WORDPRESS_PASSWORD[:2] + "*" * (len(self.WORDPRESS_PASSWORD) - 2) if len(self.WORDPRESS_PASSWORD) > 2 else self.WORDPRESS_PASSWORD
+            logger.info(f"WordPress Password loaded (masked): {masked_password}")
+        else:
+            logger.warning("WordPress Password is None or empty.")
+
         self.LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
         if self.LLM_PROVIDER not in ['gemini', 'local']:
             logger.warning(f"Unsupported LLM_PROVIDER '{self.LLM_PROVIDER}'. Defaulting to 'gemini'.")
             self.LLM_PROVIDER = 'gemini'
 
+        # Check WordPress credentials before setting is_enabled
         if not all([self.WORDPRESS_URL, self.WORDPRESS_USERNAME, self.WORDPRESS_PASSWORD]):
             logger.warning("WordPress credentials not fully set. WordPress publishing will be disabled.")
+            logger.warning(f"  - WORDPRESS_URL: {self.WORDPRESS_URL if self.WORDPRESS_URL else 'None'}")
+            logger.warning(f"  - WORDPRESS_USERNAME: {self.WORDPRESS_USERNAME if self.WORDPRESS_USERNAME else 'None'}")
+            logger.warning(f"  - WORDPRESS_PASSWORD: {'*' * 8 if self.WORDPRESS_PASSWORD else 'None'}")
 
         logger.info("Configuration loaded successfully.")
 
@@ -109,7 +127,7 @@ Weather: {weather}
 
 Provide a brief, engaging summary of the activity, suitable for a blog post.
 If possible, suggest a title for the blog post.
-Format the output as JSON: {"title": "Suggested Title", "summary": "Blog post summary"}"""
+Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"""
         except Exception as e:
             logger.error(f"Error reading prompt template: {e}")
             return """Analyze these GPX statistics for a blog post:
@@ -122,7 +140,7 @@ Weather: {weather}
 
 Provide a brief, engaging summary of the activity, suitable for a blog post.
 If possible, suggest a title for the blog post.
-Format the output as JSON: {"title": "Suggested Title", "summary": "Blog post summary"}"""
+Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"""
 
     def analyze_gpx_data(self, gpx_stats):
         """
@@ -143,17 +161,21 @@ Format the output as JSON: {"title": "Suggested Title", "summary": "Blog post su
         # Load prompt template
         prompt_template = self._load_prompt_template()
         
-        # Format prompt with data
+        # Prepare data dictionary for safe formatting
+        data = {
+            'distance': distance,
+            'duration': duration,
+            'pace_per_km': pace_per_km,
+            'speed': speed,
+            'weather': weather
+        }
+        
+        # Format prompt with data using format_map for safety
         try:
-            prompt = prompt_template.format(
-                distance=distance,
-                duration=duration,
-                pace_per_km=pace_per_km,
-                speed=speed,
-                weather=weather
-            )
+            prompt = prompt_template.format_map(data)
         except KeyError as e:
             logger.error(f"Missing variable in prompt template: {e}")
+            # Fallback to basic format with all keys provided
             prompt = prompt_template.format(
                 distance=distance,
                 duration=duration,
@@ -240,7 +262,7 @@ Weather: {weather}
 
 Provide a brief, engaging summary of the activity, suitable for a blog post.
 If possible, suggest a title for the blog post.
-Format the output as JSON: {"title": "Suggested Title", "summary": "Blog post summary"}"""
+Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"""
         except Exception as e:
             logger.error(f"Error reading prompt template: {e}")
             return """Analyze these GPX statistics for a blog post:
@@ -253,7 +275,7 @@ Weather: {weather}
 
 Provide a brief, engaging summary of the activity, suitable for a blog post.
 If possible, suggest a title for the blog post.
-Format the output as JSON: {"title": "Suggested Title", "summary": "Blog post summary"}"""
+Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"""
 
     def analyze_gpx_data(self, gpx_stats):
         """
@@ -274,17 +296,21 @@ Format the output as JSON: {"title": "Suggested Title", "summary": "Blog post su
         # Load prompt template
         prompt_template = self._load_prompt_template()
         
-        # Format prompt with data
+        # Prepare data dictionary for safe formatting
+        data = {
+            'distance': distance,
+            'duration': duration,
+            'pace_per_km': pace_per_km,
+            'speed': speed,
+            'weather': weather
+        }
+        
+        # Format prompt with data using format_map for safety
         try:
-            prompt = prompt_template.format(
-                distance=distance,
-                duration=duration,
-                pace_per_km=pace_per_km,
-                speed=speed,
-                weather=weather
-            )
+            prompt = prompt_template.format_map(data)
         except KeyError as e:
             logger.error(f"Missing variable in prompt template: {e}")
+            # Fallback to basic format with all keys provided
             prompt = prompt_template.format(
                 distance=distance,
                 duration=duration,
@@ -418,17 +444,33 @@ class TelegramManager:
 class WordPressPublisher:
     def __init__(self, config: ConfigManager):
         self.config = config
-        if not all([self.config.WORDPRESS_URL, self.config.WORDPRESS_USERNAME, self.config.WORDPRESS_PASSWORD]):
-            self.is_enabled = False
-            logger.warning("WordPress publishing is disabled due to missing credentials.")
-            return
         
+        # Debug: Check each WordPress credential individually
         self.is_enabled = True
         self.base_url = self.config.WORDPRESS_URL
         self.username = self.config.WORDPRESS_USERNAME
         self.password = self.config.WORDPRESS_PASSWORD
         self.posts_api_url = f"{self.base_url}/wp-json/wp/v2/posts"
         self.media_api_url = f"{self.base_url}/wp-json/wp/v2/media"
+
+        # Debug logging for WordPressPublisher initialization
+        if not self.config.WORDPRESS_URL:
+            logger.error("WordPressPublisher: WORDPRESS_URL is None or empty.")
+            self.is_enabled = False
+        elif not self.config.WORDPRESS_USERNAME:
+            logger.error("WordPressPublisher: WORDPRESS_USERNAME is None or empty.")
+            self.is_enabled = False
+        elif not self.config.WORDPRESS_PASSWORD:
+            logger.error("WordPressPublisher: WORDPRESS_PASSWORD is None or empty.")
+            self.is_enabled = False
+        else:
+            logger.info(f"WordPressPublisher initialized successfully. Base URL: {self.base_url}")
+
+        if not self.is_enabled:
+            logger.warning("WordPress publishing is disabled due to missing credentials.")
+            return
+        
+        logger.info("WordPressPublisher is enabled and ready.")
 
     def _get_auth_headers(self):
         # For WordPress REST API with basic auth, use a tuple for requests
