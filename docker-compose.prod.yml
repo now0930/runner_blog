@@ -3,7 +3,9 @@ version: '3.8'
 services:
   runner-app:
     # Inherit all configurations from the base service
-    <<: *app_base_service
+    extends:
+      file: docker-compose.base.yml
+      service: app_base_service
 
     # Override/add configurations specific to Telegram Bot production
     container_name: telegram_bot_prod
@@ -15,10 +17,10 @@ services:
 # Inherit networks and volumes from the base file
 networks:
   runner_network:
-    <<: *runner_network
+    driver: bridge
 
 volumes:
   telegram_session_data:
-    <<: *telegram_session_data
+    driver: local
   telegram_downloads_data:
-    <<: *telegram_downloads_data
+    driver: local
