@@ -450,8 +450,10 @@ class WordPressPublisher:
         self.base_url = self.config.WORDPRESS_URL
         self.username = self.config.WORDPRESS_USERNAME
         self.password = self.config.WORDPRESS_PASSWORD
-        self.posts_api_url = f"{self.base_url}/wp-json/wp/v2/posts"
-        self.media_api_url = f"{self.base_url}/wp-json/wp/v2/media"
+        
+        # Safely construct API URLs with rstrip to handle trailing slashes
+        self.posts_api_url = f"{self.base_url.rstrip('/')}/wp-json/wp/v2/posts"
+        self.media_api_url = f"{self.base_url.rstrip('/')}/wp-json/wp/v2/media"
 
         # Debug logging for WordPressPublisher initialization
         if not self.config.WORDPRESS_URL:

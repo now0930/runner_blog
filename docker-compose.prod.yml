@@ -15,6 +15,11 @@ services:
       - .:/app  # 현재 폴더(.)를 컨테이너의 /app 폴더와 연결
     # Override/add configurations specific to Telegram Bot production
     container_name: telegram_bot_prod
+
+    # [핵심 추가] 이 줄을 추가하세요!
+    env_file:
+      - .env
+
     # Command to run main.py, which will then run indefinitely due to asyncio.run and run_until_disconnected
     command: ["python", "main.py"]
     restart: always # Ensure the container restarts automatically if it stops or the daemon crashes
