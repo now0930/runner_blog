@@ -318,10 +318,22 @@ async def main():
 
     await _telegram_manager.connect()
 
+    # Fetch the chat entity using its ID
+    try:
+        # Fetch the chat entity using its ID
+        chat_entity = await _telegram_manager.client.get_entity(_config.CHAT_ID)
+        logger.info(f"Successfully fetched chat entity: {chat_entity.title} (ID: {chat_entity.id})")
+    except ValueError as e:
+        logger.error(f"Error fetching chat entity: {e}. Please ensure the CHAT_ID is correct and accessible.")
+        return # Exit if the chat entity cannot be found.
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while fetching chat entity: {e}")
+        return # Exit on unexpected errors
+
     # Register the event handler for new messages in the specified chat
     _telegram_manager.client.add_event_handler(
         handle_new_message,
-        events.NewMessage(chats=[_config.CHAT_ID]) # Ensure CHAT_ID is set correctly and is an int
+        events.NewMessage(chats=[chat_entity]) # Use the fetched entity object here
     )
 
     logger.info(f"Bot started. Listening for GPX files in chat ID: {_config.CHAT_ID}")
