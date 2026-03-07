@@ -33,6 +33,8 @@ services:
       - "${GEMINI_MODEL}"  # 또는 gemini-1.5-flash
       - "--editor-model"
       - "${MAIN_MODEL}"
+      - "--weak-model"
+      - "${WEAK_MODEL}"
       - "--architect"
       - "--auto-commits"
       - "--yes-always"

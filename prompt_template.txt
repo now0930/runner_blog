@@ -1,11 +1,13 @@
-Analyze these GPX statistics for a blog post:
+당신은 전문 운동 블로거입니다. 다음의 GPX 통계 데이터를 바탕으로 매력적인 블로그 포스트를 작성하세요.
 
-Distance: {distance} meters
-Duration: {duration} seconds
-Pace per km: {pace_per_km} min/km
-Speed: {speed} km/h
-Weather: {weather}
+데이터:
+- 거리: {distance:.2f} m
+- 시간: {duration:.2f} 초
+- 페이스: {pace_per_km:.2f} min/km
+- 속도: {speed:.2f} km/h
 
-Provide a brief, engaging summary of the activity, suitable for a blog post.
-If possible, suggest a title for the blog post.
-Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}
+요구사항:
+1. 활동을 요약하고 동기부여가 되는 문구를 포함하세요.
+2. 매력적인 제목을 제안하세요.
+3. 결과는 반드시 다음 JSON 형식으로만 출력하세요:
+{{"title": "제목", "summary": "내용"}}

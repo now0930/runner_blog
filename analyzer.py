@@ -15,11 +15,13 @@ class GeminiAnalyzer(BaseAnalyzer):
         if not self.api_key:
             logger.error("GEMINI_API_KEY not found in environment variables.")
             raise ValueError("GEMINI_API_KEY is required for Gemini provider")
-        
         self.client = genai.Client(api_key=self.api_key)
-        self.model_name = 'gemini-2.5-flash-lite'
-        self.fallback_model = 'gemini-1.5-flash-001'
+
+        # 환경 변수에서 모델명 로드, 없으면 기본값 사용
+        self.model_name = os.getenv("AY_GEMINI_MODEL", "gemini-2.0-flash")
+        self.fallback_model = os.getenv("AY_GEMINI_FALLBACK_MODEL", "gemini-1.5-flash")
         self.prompt_template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_template.txt')
+        logger.info(f"Analyzer initialized with model: {self.model_name}, fallback: {self.fallback_model}")
 
     def _calculate_pace(self, distance_meters, duration_seconds):
         """Calculate pace per km (min/km) and speed (km/h)."""
