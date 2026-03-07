@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 from telethon import events
 from config import ConfigManager
 from analyzer import create_analyzer
@@ -66,6 +67,15 @@ async def handle_new_message(event):
                     
                     if _wordpress_publisher and _wordpress_publisher.is_enabled:
                         _wordpress_publisher.copy_file_to_expected_location(gpx_file_path, target_path)
+                    
+                    # 파일 생성 확인 대기 루프
+                    for i in range(3):
+                        if os.path.exists(target_path):
+                            logger.info("File confirmed on disk.")
+                            break
+                        time.sleep(1)
+                    else:
+                        logger.warning("File check timed out, proceeding anyway.")
                     
                     # Prepare content for WordPress post
                     post_title = gemini_analysis.get('title', f"GPX Activity: {file_name}")
