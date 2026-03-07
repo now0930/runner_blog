@@ -29,8 +29,8 @@ class GeminiAnalyzer(BaseAnalyzer):
             return 0, 0
         
         distance_km = distance_meters / 1000
-        speed_kmh = (distance_km / duration_seconds) * 3600
-        pace_min_km = (duration_seconds / distance_km) / 60
+        pace_min_km = (duration_seconds / 60) / distance_km
+        speed_kmh = distance_km / (duration_seconds / 3600)
         
         return pace_min_km, speed_kmh
 
@@ -178,8 +178,8 @@ class LocalLLMAnalyzer(BaseAnalyzer):
             return 0, 0
         
         distance_km = distance_meters / 1000
-        speed_kmh = (distance_km / duration_seconds) * 3600
-        pace_min_km = (duration_seconds / distance_km) / 60
+        pace_min_km = (duration_seconds / 60) / distance_km
+        speed_kmh = distance_km / (duration_seconds / 3600)
         
         return pace_min_km, speed_kmh
 
