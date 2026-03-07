@@ -118,7 +118,7 @@ Weather: {weather}
 
 Provide a brief, engaging summary of the activity, suitable for a blog post.
 If possible, suggest a title for the blog post.
-Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"""
+Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"
         except Exception as e:
             logger.error(f"Error reading prompt template: {e}")
             return """Analyze these GPX statistics for a blog post:
@@ -131,7 +131,7 @@ Weather: {weather}
 
 Provide a brief, engaging summary of the activity, suitable for a blog post.
 If possible, suggest a title for the blog post.
-Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"""
+Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"
 
     def _validate_json(self, text):
         try:
@@ -317,7 +317,7 @@ class LocalLLMAnalyzer(BaseAnalyzer):
     """
     
     def __init__(self):
-        self.api_endpoint = os.getenv("LOCAL_LLM_ENDPOINT", "http://localhost:11434/api/generate")
+        self.api_endpoint = os.getenv("LOCAL_LLM_ENDPOINT", "http://ollama:11434/api/generate")
         self.model_name = os.getenv("LOCAL_LLM_MODEL", "llama3")
         self.api_key = os.getenv("LOCAL_LLM_API_KEY")
         self.prompt_template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_template.txt')

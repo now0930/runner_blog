@@ -69,11 +69,8 @@ async def handle_new_message(event):
                     post_content += f"<h3>Analysis:</h3><p>{post_summary}</p>"
                     
                     if media_url:
-                        # Extract filename from the original downloaded file path
-                        filename = os.path.basename(gpx_file_path)
-                        
-                        # Create shortcode using the fixed path format
-                        shortcode = f'[sgpx gpx="/wp-content/uploads/gpx/{filename}"]'
+                        # Create shortcode using the helper method
+                        shortcode = f'[sgpx gpx="{_wordpress_publisher.get_gpx_shortcode_path(gpx_file_path)}"]'
                         
                         # Append shortcode to post_content
                         post_content += f'<p>{shortcode}</p>'

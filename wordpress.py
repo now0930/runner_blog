@@ -50,6 +50,13 @@ class WordPressPublisher:
             return path[path.find('wp-content/uploads'):]
         return path
 
+    def get_gpx_shortcode_path(self, file_path):
+        """
+        Converts a local file path to a WordPress relative path for the [sgpx] shortcode.
+        """
+        file_name = os.path.basename(file_path)
+        return f"/wp-content/uploads/gpx/{file_name}"
+
     async def upload_media(self, file_path):
         """
         Uploads a file to WordPress media library and returns its ID and URL.
@@ -106,6 +113,11 @@ class WordPressPublisher:
         try:
             logger.info(f"Creating WordPress post: '{title}'")
             response = requests.post(self.posts_api_url, auth=self._get_auth_headers(), json=payload)
+            
+            # Log response text if not successful (201 Created)
+            if response.status_code != 201:
+                logger.error(f"WordPress API error (Status {response.status_code}): {response.text}")
+            
             response.raise_for_status()
             post_data = response.json()
             logger.info(f"Successfully created WordPress post: {post_data.get('link', 'N/A')}")
