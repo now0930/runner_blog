@@ -3,6 +3,7 @@ import json
 import logging
 import requests
 import gpxpy
+import textwrap
 from google import genai
 
 logger = logging.getLogger(__name__)
@@ -108,30 +109,34 @@ class BaseAnalyzer:
                 return f.read()
         except FileNotFoundError:
             logger.warning(f"Prompt template file not found at {self.prompt_template_path}. Using default prompt.")
-            return """Analyze these GPX statistics for a blog post:
+            return textwrap.dedent(f"""
+                Analyze these GPX statistics for a blog post:
 
-Distance: {distance} meters
-Duration: {duration} seconds
-Pace per km: {pace_per_km} min/km
-Speed: {speed} km/h
-Weather: {weather}
+                Distance: {{distance}} meters
+                Duration: {{duration}} seconds
+                Pace per km: {{pace_per_km}} min/km
+                Speed: {{speed}} km/h
+                Weather: {{weather}}
 
-Provide a brief, engaging summary of the activity, suitable for a blog post.
-If possible, suggest a title for the blog post.
-Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"
+                Provide a brief, engaging summary of the activity, suitable for a blog post.
+                If possible, suggest a title for the blog post.
+                Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}
+            """)
         except Exception as e:
             logger.error(f"Error reading prompt template: {e}")
-            return """Analyze these GPX statistics for a blog post:
+            return textwrap.dedent(f"""
+                Analyze these GPX statistics for a blog post:
 
-Distance: {distance} meters
-Duration: {duration} seconds
-Pace per km: {pace_per_km} min/km
-Speed: {speed} km/h
-Weather: {weather}
+                Distance: {{distance}} meters
+                Duration: {{duration}} seconds
+                Pace per km: {{pace_per_km}} min/km
+                Speed: {{speed}} km/h
+                Weather: {{weather}}
 
-Provide a brief, engaging summary of the activity, suitable for a blog post.
-If possible, suggest a title for the blog post.
-Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"
+                Provide a brief, engaging summary of the activity, suitable for a blog post.
+                If possible, suggest a title for the blog post.
+                Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}
+            """)
 
     def _validate_json(self, text):
         try:
