@@ -1,10 +1,16 @@
 import asyncio
 import logging
+import os
+from telethon import events
 from config import ConfigManager
 from analyzer import create_analyzer
 from processor import GpxProcessor
 from telegram_bot import TelegramManager
 from wordpress import WordPressPublisher
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Global instances (for simplicity in event handler access)
 # These will be initialized in main() and passed implicitly or accessed via closure.
