@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import time
+import requests
 from telethon import events
 from config import ConfigManager
 from analyzer import create_analyzer
@@ -77,7 +78,7 @@ async def handle_new_message(event):
                     else:
                         logger.warning("File check timed out, proceeding anyway.")
                     
-                    # Prepare content for WordPress post
+                    # Prepare content for WordPress post WITHOUT shortcode
                     post_title = gemini_analysis.get('title', f"GPX Activity: {file_name}")
                     post_summary = gemini_analysis.get('summary', 'No summary generated.')
                     
@@ -86,17 +87,37 @@ async def handle_new_message(event):
                     post_content += f"<p>Duration: {gpx_stats.get('duration', 'N/A'):.2f} seconds</p>"
                     post_content += f"<h3>Analysis:</h3><p>{post_summary}</p>"
                     
-                    # Use local path for shortcode to ensure WP GPX Maps plugin can find the file
-                    # Path is relative to WordPress root for the shortcode
-                    shortcode_path = f"/wp-content/uploads/gpx/{file_name}"
-                    shortcode = f'[sgpx gpx="{shortcode_path}"]'
-                    
-                    # Append shortcode to post_content
-                    post_content += f'<p>{shortcode}</p>'
-                    
-                    # Create WordPress post
+                    # Create WordPress post WITHOUT shortcode
                     if _wordpress_publisher and _wordpress_publisher.is_enabled:
-                        _wordpress_publisher.create_post(post_title, post_content, media_id=media_id)
+                        post_data = _wordpress_publisher.create_post(post_title, post_content, media_id=media_id)
+                        
+                        if post_data:
+                            post_id = post_data.get('id')
+                            if post_id:
+                                # Prepare content with shortcode
+                                shortcode_path = f"/wp-content/uploads/gpx/{file_name}"
+                                shortcode = f'[sgpx gpx="{shortcode_path}"]'
+                                
+                                post_content_with_shortcode = f"<h2>Activity Summary</h2>"
+                                post_content_with_shortcode += f"<p>Distance: {gpx_stats.get('distance', 'N/A'):.2f} meters</p>"
+                                post_content_with_shortcode += f"<p>Duration: {gpx_stats.get('duration', 'N/A'):.2f} seconds</p>"
+                                post_content_with_shortcode += f"<h3>Analysis:</h3><p>{post_summary}</p>"
+                                post_content_with_shortcode += f'<p>{shortcode}</p>'
+                                
+                                # Update post content with shortcode
+                                try:
+                                    update_url = f"{_wordpress_publisher.base_url.rstrip('/')}/wp-json/wp/v2/posts/{post_id}"
+                                    update_response = requests.patch(update_url, auth=_wordpress_publisher._get_auth_headers(), json={'content': post_content_with_shortcode})
+                                    if update_response.status_code == 200:
+                                        logger.info(f"Successfully updated post {post_id} with shortcode.")
+                                    else:
+                                        logger.error(f"Failed to update post {post_id}: {update_response.text}")
+                                except Exception as e:
+                                    logger.error(f"Error updating post {post_id}: {e}")
+                            else:
+                                logger.warning("No post ID returned from create_post.")
+                        else:
+                            logger.warning("Failed to create post.")
                     else:
                         logger.warning("WordPress publisher not enabled, skipping post creation.")
                 else:
