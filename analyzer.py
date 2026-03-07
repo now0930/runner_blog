@@ -14,13 +14,13 @@ class BaseAnalyzer:
     def _calculate_pace(self, distance_meters, duration_seconds):
         """Calculate pace per km (min/km) and speed (km/h)."""
         if distance_meters <= 0 or duration_seconds <= 0:
-            return 0, 0
+            return 0.0, 0.0
         
-        distance_km = distance_meters / 1000
-        pace_min_km = (duration_seconds / 60) / distance_km
-        speed_kmh = distance_km / (duration_seconds / 3600)
+        distance_km = distance_meters / 1000.0
+        pace_min_km = (duration_seconds / 60.0) / distance_km
+        speed_kmh = distance_km / (duration_seconds / 3600.0)
         
-        return pace_min_km, speed_kmh
+        return round(pace_min_km, 2), round(speed_kmh, 2)
 
     def _extract_start_coordinates(self, gpx_data):
         """Extract latitude and longitude from the first track point in GPX data.
