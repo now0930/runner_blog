@@ -5,6 +5,7 @@
 - 시간: {duration:.2f} 초
 - 페이스: {pace_per_km:.2f} min/km
 - 속도: {speed:.2f} km/h
+- 현재 날씨: {weather}
 
 요구사항:
 1. 활동을 요약하고 동기부여가 되는 문구를 포함하세요.

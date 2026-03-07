@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import requests
+import gpxpy
 from google import genai
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,37 @@ class GeminiAnalyzer(BaseAnalyzer):
         self.fallback_model = os.getenv("AY_GEMINI_FALLBACK_MODEL", "gemini-1.5-flash")
         self.prompt_template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_template.txt')
         logger.info(f"Analyzer initialized with model: {self.model_name}, fallback: {self.fallback_model}")
+
+    def _extract_start_coordinates(self, gpx_data):
+        """Extract latitude and longitude from the first track point in GPX data.
+        
+        Args:
+            gpx_data: GPX file path or gpxpy.parse() object
+            
+        Returns:
+            tuple: (latitude, longitude) or (None, None) if extraction fails
+        """
+        try:
+            if isinstance(gpx_data, str):
+                with open(gpx_data, 'r', encoding='utf-8') as f:
+                    gpx = gpxpy.parse(f)
+            else:
+                gpx = gpx_data
+            
+            if gpx.tracks:
+                first_track = gpx.tracks[0]
+                if first_track.segments:
+                    first_segment = first_track.segments[0]
+                    if first_segment.points:
+                        first_point = first_segment.points[0]
+                        return (first_point.latitude, first_point.longitude)
+            
+            logger.warning("No track points found in GPX data.")
+            return (None, None)
+            
+        except Exception as e:
+            logger.error(f"Failed to extract coordinates from GPX data: {e}")
+            return (None, None)
 
     def _calculate_pace(self, distance_meters, duration_seconds):
         """Calculate pace per km (min/km) and speed (km/h)."""
@@ -122,10 +154,14 @@ Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post s
         # Calculate pace and speed
         pace_per_km, speed = self._calculate_pace(distance, duration)
         
-        # Get weather info (try to extract lat/lon from GPX stats if available)
+        # Extract coordinates from GPX data if available
+        gpx_file_path = gpx_stats.get('gpx_file_path')
+        latitude, longitude = self._extract_start_coordinates(gpx_file_path)
+        
+        # Get weather info
         weather = self._get_weather_info(
-            latitude=gpx_stats.get('latitude'),
-            longitude=gpx_stats.get('longitude')
+            latitude=latitude,
+            longitude=longitude
         )
         
         # Load prompt template
@@ -207,6 +243,37 @@ class LocalLLMAnalyzer(BaseAnalyzer):
         self.api_endpoint = os.getenv("LOCAL_LLM_ENDPOINT", "http://localhost:11434/api/generate")
         self.model_name = os.getenv("LOCAL_LLM_MODEL", "llama3")
         logger.info(f"Local LLM configured with endpoint: {self.api_endpoint}, model: {self.model_name}")
+
+    def _extract_start_coordinates(self, gpx_data):
+        """Extract latitude and longitude from the first track point in GPX data.
+        
+        Args:
+            gpx_data: GPX file path or gpxpy.parse() object
+            
+        Returns:
+            tuple: (latitude, longitude) or (None, None) if extraction fails
+        """
+        try:
+            if isinstance(gpx_data, str):
+                with open(gpx_data, 'r', encoding='utf-8') as f:
+                    gpx = gpxpy.parse(f)
+            else:
+                gpx = gpx_data
+            
+            if gpx.tracks:
+                first_track = gpx.tracks[0]
+                if first_track.segments:
+                    first_segment = first_track.segments[0]
+                    if first_segment.points:
+                        first_point = first_segment.points[0]
+                        return (first_point.latitude, first_point.longitude)
+            
+            logger.warning("No track points found in GPX data.")
+            return (None, None)
+            
+        except Exception as e:
+            logger.error(f"Failed to extract coordinates from GPX data: {e}")
+            return (None, None)
 
     def _calculate_pace(self, distance_meters, duration_seconds):
         """Calculate pace per km (min/km) and speed (km/h)."""
@@ -306,10 +373,14 @@ Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post s
         # Calculate pace and speed
         pace_per_km, speed = self._calculate_pace(distance, duration)
         
-        # Get weather info (try to extract lat/lon from GPX stats if available)
+        # Extract coordinates from GPX data if available
+        gpx_file_path = gpx_stats.get('gpx_file_path')
+        latitude, longitude = self._extract_start_coordinates(gpx_file_path)
+        
+        # Get weather info
         weather = self._get_weather_info(
-            latitude=gpx_stats.get('latitude'),
-            longitude=gpx_stats.get('longitude')
+            latitude=latitude,
+            longitude=longitude
         )
         
         # Load prompt template
