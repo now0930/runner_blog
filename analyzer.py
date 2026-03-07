@@ -34,12 +34,24 @@ class GeminiAnalyzer(BaseAnalyzer):
         Returns:
             tuple: (latitude, longitude) or (None, None) if extraction fails
         """
+        # Default coordinates for Gupo
+        default_lat = 37.35
+        default_lon = 126.93
+        
         try:
             if isinstance(gpx_data, str):
+                if not gpx_data or not os.path.exists(gpx_data):
+                    logger.warning(f"GPX file path is empty or does not exist: {gpx_data}")
+                    return (default_lat, default_lon)
+                
                 with open(gpx_data, 'r', encoding='utf-8') as f:
                     gpx = gpxpy.parse(f)
             else:
                 gpx = gpx_data
+            
+            if gpx is None:
+                logger.warning("GPX object is None after parsing.")
+                return (default_lat, default_lon)
             
             if gpx.tracks:
                 first_track = gpx.tracks[0]
@@ -50,11 +62,11 @@ class GeminiAnalyzer(BaseAnalyzer):
                         return (first_point.latitude, first_point.longitude)
             
             logger.warning("No track points found in GPX data.")
-            return (None, None)
+            return (default_lat, default_lon)
             
         except Exception as e:
             logger.error(f"Failed to extract coordinates from GPX data: {e}")
-            return (None, None)
+            return (default_lat, default_lon)
 
     def _calculate_pace(self, distance_meters, duration_seconds):
         """Calculate pace per km (min/km) and speed (km/h)."""
@@ -156,7 +168,18 @@ Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post s
         
         # Extract coordinates from GPX data if available
         gpx_file_path = gpx_stats.get('gpx_file_path')
-        latitude, longitude = self._extract_start_coordinates(gpx_file_path)
+        
+        # Validate gpx_file_path before processing
+        if gpx_file_path is None:
+            logger.warning("No GPX file path provided in stats. Using default coordinates.")
+            latitude, longitude = 37.35, 126.93
+        else:
+            # Check if file exists and is not empty
+            if not gpx_file_path or not os.path.exists(gpx_file_path):
+                logger.warning(f"GPX file path is invalid or does not exist: {gpx_file_path}")
+                latitude, longitude = 37.35, 126.93
+            else:
+                latitude, longitude = self._extract_start_coordinates(gpx_file_path)
         
         # Get weather info
         weather = self._get_weather_info(
@@ -253,12 +276,24 @@ class LocalLLMAnalyzer(BaseAnalyzer):
         Returns:
             tuple: (latitude, longitude) or (None, None) if extraction fails
         """
+        # Default coordinates for Gupo
+        default_lat = 37.35
+        default_lon = 126.93
+        
         try:
             if isinstance(gpx_data, str):
+                if not gpx_data or not os.path.exists(gpx_data):
+                    logger.warning(f"GPX file path is empty or does not exist: {gpx_data}")
+                    return (default_lat, default_lon)
+                
                 with open(gpx_data, 'r', encoding='utf-8') as f:
                     gpx = gpxpy.parse(f)
             else:
                 gpx = gpx_data
+            
+            if gpx is None:
+                logger.warning("GPX object is None after parsing.")
+                return (default_lat, default_lon)
             
             if gpx.tracks:
                 first_track = gpx.tracks[0]
@@ -269,11 +304,11 @@ class LocalLLMAnalyzer(BaseAnalyzer):
                         return (first_point.latitude, first_point.longitude)
             
             logger.warning("No track points found in GPX data.")
-            return (None, None)
+            return (default_lat, default_lon)
             
         except Exception as e:
             logger.error(f"Failed to extract coordinates from GPX data: {e}")
-            return (None, None)
+            return (default_lat, default_lon)
 
     def _calculate_pace(self, distance_meters, duration_seconds):
         """Calculate pace per km (min/km) and speed (km/h)."""
@@ -375,7 +410,18 @@ Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post s
         
         # Extract coordinates from GPX data if available
         gpx_file_path = gpx_stats.get('gpx_file_path')
-        latitude, longitude = self._extract_start_coordinates(gpx_file_path)
+        
+        # Validate gpx_file_path before processing
+        if gpx_file_path is None:
+            logger.warning("No GPX file path provided in stats. Using default coordinates.")
+            latitude, longitude = 37.35, 126.93
+        else:
+            # Check if file exists and is not empty
+            if not gpx_file_path or not os.path.exists(gpx_file_path):
+                logger.warning(f"GPX file path is invalid or does not exist: {gpx_file_path}")
+                latitude, longitude = 37.35, 126.93
+            else:
+                latitude, longitude = self._extract_start_coordinates(gpx_file_path)
         
         # Get weather info
         weather = self._get_weather_info(
