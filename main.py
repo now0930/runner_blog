@@ -39,7 +39,7 @@ async def handle_new_message(event):
     if gpx_file_path:
         logger.info(f"GPX file downloaded to: {gpx_file_path}")
         
-        # Process GPX
+        # Process GPX - processor returns dict with gpx_file_path included
         gpx_stats = _gpx_processor.process(gpx_file_path)
         
         if gpx_stats:
@@ -63,9 +63,9 @@ async def handle_new_message(event):
                     post_title = gemini_analysis.get('title', f"GPX Activity: {os.path.basename(gpx_file_path)}")
                     post_summary = gemini_analysis.get('summary', 'No summary generated.')
                     
-                    # Get pace and speed from gpx_stats
-                    pace_per_km = gpx_stats.get('pace_per_km', 0)
-                    speed = gpx_stats.get('speed', 0)
+                    # Get pace and speed from gpx_stats (already floats from processor)
+                    pace_per_km = float(gpx_stats.get('pace_per_km', 0))
+                    speed = float(gpx_stats.get('speed', 0))
                     
                     post_content = f"<h2>Activity Summary</h2>"
                     post_content += f"<p>Distance: {gpx_stats.get('distance', 'N/A'):.2f} meters</p>"
