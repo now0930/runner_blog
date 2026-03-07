@@ -53,9 +53,9 @@ async def handle_new_message(event):
                     logger.info(f"Analyzer completed. Title: {gemini_analysis.get('title')}")
                     
                     # Upload GPX to WordPress Media Library
-                    media_id, media_url = None, None
+                    media_id, media_url, source_url = None, None, None
                     if _wordpress_publisher and _wordpress_publisher.is_enabled:
-                        media_id, media_url = await _wordpress_publisher.upload_media(gpx_file_path)
+                        media_id, media_url, source_url = await _wordpress_publisher.upload_media(gpx_file_path)
                     else:
                         logger.warning("WordPress publisher not enabled, skipping media upload.")
                     
@@ -68,11 +68,16 @@ async def handle_new_message(event):
                     post_content += f"<p>Duration: {gpx_stats.get('duration', 'N/A'):.2f} seconds</p>"
                     post_content += f"<h3>Analysis:</h3><p>{post_summary}</p>"
                     
-                    if media_url:
-                        # Create shortcode using the helper method
-                        shortcode = f'[sgpx gpx="{_wordpress_publisher.get_gpx_shortcode_path(gpx_file_path)}"]'
+                    # Use source_url from upload_media response for shortcode
+                    if source_url:
+                        # Create shortcode using the source_url from API response
+                        shortcode = f'[sgpx gpx="{source_url}"]'
                         
                         # Append shortcode to post_content
+                        post_content += f'<p>{shortcode}</p>'
+                    elif media_url:
+                        # Fallback to media_url if source_url is not available
+                        shortcode = f'[sgpx gpx="{media_url}"]'
                         post_content += f'<p>{shortcode}</p>'
                     
                     # Create WordPress post

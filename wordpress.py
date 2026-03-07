@@ -57,13 +57,22 @@ class WordPressPublisher:
         file_name = os.path.basename(file_path)
         return f"/wp-content/uploads/gpx/{file_name}"
 
+    def get_gpx_shortcode_url(self, media_url):
+        """
+        Extracts the full URL from the media upload response for the [sgpx] shortcode.
+        """
+        if media_url:
+            return media_url
+        return None
+
     async def upload_media(self, file_path):
         """
         Uploads a file to WordPress media library and returns its ID and URL.
+        Returns: (media_id, media_url, source_url)
         """
         if not self.is_enabled:
             logger.warning("WordPress publisher is not enabled. Cannot upload media.")
-            return None, None
+            return None, None, None
 
         file_name = os.path.basename(file_path)
         try:
@@ -80,19 +89,44 @@ class WordPressPublisher:
                 media_data = response.json()
                 media_id = media_data.get('id')
                 media_url = media_data.get('source_url')
+                source_url = media_data.get('source_url')
                 logger.info(f"Successfully uploaded media. ID: {media_id}, URL: {media_url}")
-                return media_id, media_url
+                return media_id, media_url, source_url
         except FileNotFoundError:
             logger.error(f"Media file not found at {file_path}")
-            return None, None
+            return None, None, None
         except requests.exceptions.RequestException as e:
             logger.error(f"Error uploading media to WordPress: {e}")
             if 'response' in locals() and response is not None:
                 logger.error(f"WordPress API response: {response.text}")
-            return None, None
+            return None, None, None
         except Exception as e:
             logger.error(f"An unexpected error occurred during media upload: {e}")
-            return None, None
+            return None, None, None
+
+    def copy_file_to_expected_location(self, source_path, target_path):
+        """
+        Copies the uploaded file to the expected location if it doesn't exist there.
+        Adjusts permissions if needed.
+        """
+        try:
+            if not os.path.exists(target_path):
+                logger.info(f"Copying file from {source_path} to {target_path}")
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                with open(source_path, 'rb') as src:
+                    with open(target_path, 'wb') as dst:
+                        dst.write(src.read())
+                
+                # Adjust permissions (readable by web server)
+                os.chmod(target_path, 0o644)
+                logger.info(f"File copied and permissions adjusted: {target_path}")
+                return True
+            else:
+                logger.info(f"File already exists at {target_path}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to copy file to expected location: {e}")
+            return False
 
     def create_post(self, title, content, status='publish', media_id=None):
         """
