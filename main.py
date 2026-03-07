@@ -59,8 +59,16 @@ async def handle_new_message(event):
                     else:
                         logger.warning("WordPress publisher not enabled, skipping media upload.")
                     
+                    # Copy file to expected local path to avoid WP media library renaming issues
+                    # Target path: /var/www/html/wordpress/wp-content/uploads/gpx/{filename}
+                    file_name = os.path.basename(gpx_file_path)
+                    target_path = f"/var/www/html/wordpress/wp-content/uploads/gpx/{file_name}"
+                    
+                    if _wordpress_publisher and _wordpress_publisher.is_enabled:
+                        _wordpress_publisher.copy_file_to_expected_location(gpx_file_path, target_path)
+                    
                     # Prepare content for WordPress post
-                    post_title = gemini_analysis.get('title', f"GPX Activity: {os.path.basename(gpx_file_path)}")
+                    post_title = gemini_analysis.get('title', f"GPX Activity: {file_name}")
                     post_summary = gemini_analysis.get('summary', 'No summary generated.')
                     
                     post_content = f"<h2>Activity Summary</h2>"
@@ -68,17 +76,13 @@ async def handle_new_message(event):
                     post_content += f"<p>Duration: {gpx_stats.get('duration', 'N/A'):.2f} seconds</p>"
                     post_content += f"<h3>Analysis:</h3><p>{post_summary}</p>"
                     
-                    # Use source_url from upload_media response for shortcode
-                    if source_url:
-                        # Create shortcode using the source_url from API response
-                        shortcode = f'[sgpx gpx="{source_url}"]'
-                        
-                        # Append shortcode to post_content
-                        post_content += f'<p>{shortcode}</p>'
-                    elif media_url:
-                        # Fallback to media_url if source_url is not available
-                        shortcode = f'[sgpx gpx="{media_url}"]'
-                        post_content += f'<p>{shortcode}</p>'
+                    # Use local path for shortcode to ensure WP GPX Maps plugin can find the file
+                    # Path is relative to WordPress root for the shortcode
+                    shortcode_path = f"/wp-content/uploads/gpx/{file_name}"
+                    shortcode = f'[sgpx gpx="{shortcode_path}"]'
+                    
+                    # Append shortcode to post_content
+                    post_content += f'<p>{shortcode}</p>'
                     
                     # Create WordPress post
                     if _wordpress_publisher and _wordpress_publisher.is_enabled:
