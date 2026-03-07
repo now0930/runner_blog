@@ -2,5 +2,6 @@
 __pycache__/
 *.pyc
 temp_gpx/
-sessions/
+session/
 .env
+*.swp
