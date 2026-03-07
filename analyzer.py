@@ -11,19 +11,16 @@ class BaseAnalyzer:
     def analyze_gpx_data(self, gpx_stats):
         raise NotImplementedError
 
-class GeminiAnalyzer(BaseAnalyzer):
-    def __init__(self):
-        self.api_key = os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            logger.error("GEMINI_API_KEY not found in environment variables.")
-            raise ValueError("GEMINI_API_KEY is required for Gemini provider")
-        self.client = genai.Client(api_key=self.api_key)
-
-        # 환경 변수에서 모델명 로드, 없으면 기본값 사용
-        self.model_name = os.getenv("AY_GEMINI_MODEL", "gemini-2.0-flash")
-        self.fallback_model = os.getenv("AY_GEMINI_FALLBACK_MODEL", "gemini-1.5-flash")
-        self.prompt_template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_template.txt')
-        logger.info(f"Analyzer initialized with model: {self.model_name}, fallback: {self.fallback_model}")
+    def _calculate_pace(self, distance_meters, duration_seconds):
+        """Calculate pace per km (min/km) and speed (km/h)."""
+        if distance_meters <= 0 or duration_seconds <= 0:
+            return 0, 0
+        
+        distance_km = distance_meters / 1000
+        pace_min_km = (duration_seconds / 60) / distance_km
+        speed_kmh = distance_km / (duration_seconds / 3600)
+        
+        return pace_min_km, speed_kmh
 
     def _extract_start_coordinates(self, gpx_data):
         """Extract latitude and longitude from the first track point in GPX data.
@@ -67,17 +64,6 @@ class GeminiAnalyzer(BaseAnalyzer):
         except Exception as e:
             logger.error(f"Failed to extract coordinates from GPX data: {e}")
             return (default_lat, default_lon)
-
-    def _calculate_pace(self, distance_meters, duration_seconds):
-        """Calculate pace per km (min/km) and speed (km/h)."""
-        if distance_meters <= 0 or duration_seconds <= 0:
-            return 0, 0
-        
-        distance_km = distance_meters / 1000
-        pace_min_km = (duration_seconds / 60) / distance_km
-        speed_kmh = distance_km / (duration_seconds / 3600)
-        
-        return pace_min_km, speed_kmh
 
     def _get_weather_info(self, latitude=None, longitude=None):
         """Get weather information from Open-Meteo API.
@@ -152,6 +138,74 @@ Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post s
             return json.loads(text)
         except json.JSONDecodeError:
             return None
+
+    def _call_llm(self, prompt, model_name, api_endpoint=None, api_key=None):
+        """Call LLM API and return parsed JSON response.
+        
+        Args:
+            prompt: The prompt to send to the LLM
+            model_name: The model name to use
+            api_endpoint: The API endpoint (for local LLM)
+            api_key: API key if required
+            
+        Returns:
+            dict: Parsed JSON response or error message
+        """
+        try:
+            if api_endpoint:
+                # Local LLM (e.g., Ollama)
+                headers = {"Content-Type": "application/json"}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                
+                payload = {
+                    "model": model_name,
+                    "prompt": prompt,
+                    "format": "json"
+                }
+                
+                response = requests.post(api_endpoint, json=payload, headers=headers, timeout=60)
+                response.raise_for_status()
+                
+                result = response.json()
+                
+                # Ollama returns response in 'response' field
+                if 'response' in result:
+                    text = result['response']
+                elif 'message' in result and 'content' in result['message']:
+                    text = result['message']['content']
+                else:
+                    text = str(result)
+                
+                return self._validate_json(text)
+            else:
+                # Remote LLM (e.g., Gemini)
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Failed to call LLM API: {e}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to decode LLM response: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error calling LLM: {e}")
+            return None
+
+
+class GeminiAnalyzer(BaseAnalyzer):
+    def __init__(self):
+        self.api_key = os.getenv("GEMINI_API_KEY")
+        if not self.api_key:
+            logger.error("GEMINI_API_KEY not found in environment variables.")
+            raise ValueError("GEMINI_API_KEY is required for Gemini provider")
+        self.client = genai.Client(api_key=self.api_key)
+
+        # 환경 변수에서 모델명 로드, 없으면 기본값 사용
+        self.model_name = os.getenv("AY_GEMINI_MODEL", "gemini-2.0-flash")
+        self.fallback_model = os.getenv("AY_GEMINI_FALLBACK_MODEL", "gemini-1.5-flash")
+        self.prompt_template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_template.txt')
+        logger.info(f"Analyzer initialized with model: {self.model_name}, fallback: {self.fallback_model}")
 
     def analyze_gpx_data(self, gpx_stats):
         """
@@ -256,144 +310,18 @@ Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post s
                 logger.error(f"Error analyzing with Gemini: {e}")
             return {"title": "GPX Activity Analysis", "summary": f"An error occurred during analysis: {e}"}
 
+
 class LocalLLMAnalyzer(BaseAnalyzer):
     """
-    Placeholder for local LLM analyzer.
-    In a real implementation, this would connect to a local LLM service.
+    Local LLM analyzer that connects to a local LLM service (e.g., Ollama).
     """
     
     def __init__(self):
         self.api_endpoint = os.getenv("LOCAL_LLM_ENDPOINT", "http://localhost:11434/api/generate")
         self.model_name = os.getenv("LOCAL_LLM_MODEL", "llama3")
+        self.api_key = os.getenv("LOCAL_LLM_API_KEY")
+        self.prompt_template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_template.txt')
         logger.info(f"Local LLM configured with endpoint: {self.api_endpoint}, model: {self.model_name}")
-
-    def _extract_start_coordinates(self, gpx_data):
-        """Extract latitude and longitude from the first track point in GPX data.
-        
-        Args:
-            gpx_data: GPX file path or gpxpy.parse() object
-            
-        Returns:
-            tuple: (latitude, longitude) or (None, None) if extraction fails
-        """
-        # Default coordinates for Gupo
-        default_lat = 37.35
-        default_lon = 126.93
-        
-        try:
-            if isinstance(gpx_data, str):
-                if not gpx_data or not os.path.exists(gpx_data):
-                    logger.warning(f"GPX file path is empty or does not exist: {gpx_data}")
-                    return (default_lat, default_lon)
-                
-                with open(gpx_data, 'r', encoding='utf-8') as f:
-                    gpx = gpxpy.parse(f)
-            else:
-                gpx = gpx_data
-            
-            if gpx is None:
-                logger.warning("GPX object is None after parsing.")
-                return (default_lat, default_lon)
-            
-            if gpx.tracks:
-                first_track = gpx.tracks[0]
-                if first_track.segments:
-                    first_segment = first_track.segments[0]
-                    if first_segment.points:
-                        first_point = first_segment.points[0]
-                        return (first_point.latitude, first_point.longitude)
-            
-            logger.warning("No track points found in GPX data.")
-            return (default_lat, default_lon)
-            
-        except Exception as e:
-            logger.error(f"Failed to extract coordinates from GPX data: {e}")
-            return (default_lat, default_lon)
-
-    def _calculate_pace(self, distance_meters, duration_seconds):
-        """Calculate pace per km (min/km) and speed (km/h)."""
-        if distance_meters <= 0 or duration_seconds <= 0:
-            return 0, 0
-        
-        distance_km = distance_meters / 1000
-        pace_min_km = (duration_seconds / 60) / distance_km
-        speed_kmh = distance_km / (duration_seconds / 3600)
-        
-        return pace_min_km, speed_kmh
-
-    def _get_weather_info(self, latitude=None, longitude=None):
-        """Get weather information from Open-Meteo API.
-        
-        Args:
-            latitude: Latitude coordinate (optional)
-            longitude: Longitude coordinate (optional)
-            
-        Returns:
-            str: Weather information string including temperature
-        """
-        if latitude is None or longitude is None:
-            logger.info("Weather info requested without coordinates. Using placeholder.")
-            return "현재 날씨 정보 없음"
-        
-        try:
-            # Open-Meteo API endpoint for current weather
-            url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m"
-            
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            temperature = data['current']['temperature_2m']
-            
-            return f"현재 날씨: {temperature:.1f}°C"
-            
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Failed to fetch weather data from Open-Meteo: {e}")
-            return "현재 날씨 정보 없음"
-        except (KeyError, TypeError) as e:
-            logger.warning(f"Unexpected response format from Open-Meteo: {e}")
-            return "현재 날씨 정보 없음"
-        except Exception as e:
-            logger.error(f"Unexpected error fetching weather data: {e}")
-            return "현재 날씨 정보 없음"
-
-    def _load_prompt_template(self):
-        """Load prompt template from file with fallback."""
-        try:
-            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_template.txt'), 'r', encoding='utf-8') as f:
-                return f.read()
-        except FileNotFoundError:
-            logger.warning("Prompt template file not found. Using default prompt.")
-            return """Analyze these GPX statistics for a blog post:
-
-Distance: {distance} meters
-Duration: {duration} seconds
-Pace per km: {pace_per_km} min/km
-Speed: {speed} km/h
-Weather: {weather}
-
-Provide a brief, engaging summary of the activity, suitable for a blog post.
-If possible, suggest a title for the blog post.
-Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"""
-        except Exception as e:
-            logger.error(f"Error reading prompt template: {e}")
-            return """Analyze these GPX statistics for a blog post:
-
-Distance: {distance} meters
-Duration: {duration} seconds
-Pace per km: {pace_per_km} min/km
-Speed: {speed} km/h
-Weather: {weather}
-
-Provide a brief, engaging summary of the activity, suitable for a blog post.
-If possible, suggest a title for the blog post.
-Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}"""
-
-    def _validate_json(self, text):
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            return None
 
     def analyze_gpx_data(self, gpx_stats):
         """
@@ -455,17 +383,19 @@ Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post s
                 weather=weather
             )
         
-        try:
-            # Simulate local LLM call - in production, use requests.post to your local LLM
-            # For now, we'll use a mock response
-            analysis_result = {
-                "title": f"Local LLM Analysis: {gpx_stats.get('distance', 0):.2f}m Run",
-                "summary": f"Completed a {gpx_stats.get('distance', 0):.2f} meter run in {gpx_stats.get('duration', 0):.2f} seconds. {weather}"
-            }
+        # Call local LLM
+        analysis_result = self._call_llm(
+            prompt=prompt,
+            model_name=self.model_name,
+            api_endpoint=self.api_endpoint,
+            api_key=self.api_key
+        )
+        
+        if analysis_result:
             return analysis_result
-        except Exception as e:
-            logger.error(f"Error analyzing with local LLM: {e}")
-            return {"title": "GPX Activity Analysis", "summary": f"An error occurred during local analysis: {e}"}
+        else:
+            logger.error("Local LLM returned invalid or no response.")
+            return {"title": "GPX Activity Analysis", "summary": "Local LLM failed to generate a valid response."}
 
 def create_analyzer(config):
     """
