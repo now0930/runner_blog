@@ -16,12 +16,17 @@ class TelegramManager:
         self.target_chat_id = int(self.config.CHAT_ID) # Ensure it's an integer
 
     async def connect(self):
-        await self.client.start(phone=self.config.PHONE_NUMBER)
-        if not await self.client.is_user_authorized():
-            logger.error("Telegram client is not authorized. Please check your phone number and session file.")
-            # Potentially prompt for code/password here if not handled by client.start logic
+        # 1. Establish connection to Telegram servers
+        await self.client.connect()
+
+        # 2. Check if the session is already authorized
+        if await self.client.is_user_authorized():
+            logger.info("Telegram client connected and already authorized.")
         else:
-            logger.info("Telegram client connected and authorized.")
+            # 3. Only start the auth flow if not authorized
+            logger.info("Telegram client not authorized. Starting auth flow...")
+            await self.client.start(phone=self.config.PHONE_NUMBER)
+            logger.info("Telegram client authorized successfully.")
 
     async def download_gpx_file(self, message):
         if not message.document:
