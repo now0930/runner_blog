@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import requests
 from google import genai
 
 logger = logging.getLogger(__name__)
@@ -34,9 +35,41 @@ class GeminiAnalyzer(BaseAnalyzer):
         
         return pace_min_km, speed_kmh
 
-    def _get_weather_info(self):
-        """Get weather information (placeholder for now)."""
-        return "현재 날씨 정보 없음"
+    def _get_weather_info(self, latitude=None, longitude=None):
+        """Get weather information from Open-Meteo API.
+        
+        Args:
+            latitude: Latitude coordinate (optional)
+            longitude: Longitude coordinate (optional)
+            
+        Returns:
+            str: Weather information string including temperature
+        """
+        if latitude is None or longitude is None:
+            logger.info("Weather info requested without coordinates. Using placeholder.")
+            return "현재 날씨 정보 없음"
+        
+        try:
+            # Open-Meteo API endpoint for current weather
+            url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m"
+            
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            temperature = data['current']['temperature_2m']
+            
+            return f"현재 날씨: {temperature:.1f}°C"
+            
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Failed to fetch weather data from Open-Meteo: {e}")
+            return "현재 날씨 정보 없음"
+        except (KeyError, TypeError) as e:
+            logger.warning(f"Unexpected response format from Open-Meteo: {e}")
+            return "현재 날씨 정보 없음"
+        except Exception as e:
+            logger.error(f"Unexpected error fetching weather data: {e}")
+            return "현재 날씨 정보 없음"
 
     def _load_prompt_template(self):
         """Load prompt template from file with fallback."""
@@ -89,8 +122,11 @@ Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post s
         # Calculate pace and speed
         pace_per_km, speed = self._calculate_pace(distance, duration)
         
-        # Get weather info
-        weather = self._get_weather_info()
+        # Get weather info (try to extract lat/lon from GPX stats if available)
+        weather = self._get_weather_info(
+            latitude=gpx_stats.get('latitude'),
+            longitude=gpx_stats.get('longitude')
+        )
         
         # Load prompt template
         prompt_template = self._load_prompt_template()
@@ -183,9 +219,41 @@ class LocalLLMAnalyzer(BaseAnalyzer):
         
         return pace_min_km, speed_kmh
 
-    def _get_weather_info(self):
-        """Get weather information (placeholder for now)."""
-        return "현재 날씨 정보 없음"
+    def _get_weather_info(self, latitude=None, longitude=None):
+        """Get weather information from Open-Meteo API.
+        
+        Args:
+            latitude: Latitude coordinate (optional)
+            longitude: Longitude coordinate (optional)
+            
+        Returns:
+            str: Weather information string including temperature
+        """
+        if latitude is None or longitude is None:
+            logger.info("Weather info requested without coordinates. Using placeholder.")
+            return "현재 날씨 정보 없음"
+        
+        try:
+            # Open-Meteo API endpoint for current weather
+            url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m"
+            
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            temperature = data['current']['temperature_2m']
+            
+            return f"현재 날씨: {temperature:.1f}°C"
+            
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Failed to fetch weather data from Open-Meteo: {e}")
+            return "현재 날씨 정보 없음"
+        except (KeyError, TypeError) as e:
+            logger.warning(f"Unexpected response format from Open-Meteo: {e}")
+            return "현재 날씨 정보 없음"
+        except Exception as e:
+            logger.error(f"Unexpected error fetching weather data: {e}")
+            return "현재 날씨 정보 없음"
 
     def _load_prompt_template(self):
         """Load prompt template from file with fallback."""
@@ -238,8 +306,11 @@ Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post s
         # Calculate pace and speed
         pace_per_km, speed = self._calculate_pace(distance, duration)
         
-        # Get weather info
-        weather = self._get_weather_info()
+        # Get weather info (try to extract lat/lon from GPX stats if available)
+        weather = self._get_weather_info(
+            latitude=gpx_stats.get('latitude'),
+            longitude=gpx_stats.get('longitude')
+        )
         
         # Load prompt template
         prompt_template = self._load_prompt_template()
@@ -272,7 +343,7 @@ Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post s
             # For now, we'll use a mock response
             analysis_result = {
                 "title": f"Local LLM Analysis: {gpx_stats.get('distance', 0):.2f}m Run",
-                "summary": f"Completed a {gpx_stats.get('distance', 0):.2f} meter run in {gpx_stats.get('duration', 0):.2f} seconds. Great job!"
+                "summary": f"Completed a {gpx_stats.get('distance', 0):.2f} meter run in {gpx_stats.get('duration', 0):.2f} seconds. {weather}"
             }
             return analysis_result
         except Exception as e:
