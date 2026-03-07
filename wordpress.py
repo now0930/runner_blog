@@ -1,0 +1,120 @@
+import requests
+import logging
+import os
+from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
+
+class WordPressPublisher:
+    def __init__(self, config):
+        self.config = config
+        
+        # Debug: Check each WordPress credential individually
+        self.is_enabled = True
+        self.base_url = self.config.WORDPRESS_URL
+        self.username = self.config.WORDPRESS_USERNAME
+        self.password = self.config.WORDPRESS_PASSWORD
+        
+        # Safely construct API URLs with rstrip to handle trailing slashes
+        self.posts_api_url = f"{self.base_url.rstrip('/')}/wp-json/wp/v2/posts"
+        self.media_api_url = f"{self.base_url.rstrip('/')}/wp-json/wp/v2/media"
+
+        # Debug logging for WordPressPublisher initialization
+        if not self.config.WORDPRESS_URL:
+            logger.error("WordPressPublisher: WORDPRESS_URL is None or empty.")
+            self.is_enabled = False
+        elif not self.config.WORDPRESS_USERNAME:
+            logger.error("WordPressPublisher: WORDPRESS_USERNAME is None or empty.")
+            self.is_enabled = False
+        elif not self.config.WORDPRESS_PASSWORD:
+            logger.error("WordPressPublisher: WORDPRESS_PASSWORD is None or empty.")
+            self.is_enabled = False
+        else:
+            logger.info(f"WordPressPublisher initialized successfully. Base URL: {self.base_url}")
+
+        if not self.is_enabled:
+            logger.warning("WordPress publishing is disabled due to missing credentials.")
+            return
+        
+        logger.info("WordPressPublisher is enabled and ready.")
+
+    def _get_auth_headers(self):
+        # For WordPress REST API with basic auth, use a tuple for requests
+        return (self.username, self.password)
+
+    def get_relative_path(self, media_url):
+        """Extracts wp-content/uploads/... path from full URL."""
+        parsed = urlparse(media_url)
+        path = parsed.path.lstrip('/')
+        if 'wp-content/uploads' in path:
+            return path[path.find('wp-content/uploads'):]
+        return path
+
+    async def upload_media(self, file_path):
+        """
+        Uploads a file to WordPress media library and returns its ID and URL.
+        """
+        if not self.is_enabled:
+            logger.warning("WordPress publisher is not enabled. Cannot upload media.")
+            return None, None
+
+        file_name = os.path.basename(file_path)
+        try:
+            with open(file_path, 'rb') as f:
+                files = {'file': (file_name, f)}
+                # Set Content-Disposition header for WordPress to recognize filename
+                headers = {
+                    'Content-Disposition': f'attachment; filename="{file_name}"'
+                }
+                
+                logger.info(f"Uploading {file_name} to WordPress media library...")
+                response = requests.post(self.media_api_url, auth=self._get_auth_headers(), files=files, headers=headers)
+                response.raise_for_status()
+                media_data = response.json()
+                media_id = media_data.get('id')
+                media_url = media_data.get('source_url')
+                logger.info(f"Successfully uploaded media. ID: {media_id}, URL: {media_url}")
+                return media_id, media_url
+        except FileNotFoundError:
+            logger.error(f"Media file not found at {file_path}")
+            return None, None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error uploading media to WordPress: {e}")
+            if 'response' in locals() and response is not None:
+                logger.error(f"WordPress API response: {response.text}")
+            return None, None
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during media upload: {e}")
+            return None, None
+
+    def create_post(self, title, content, status='publish', media_id=None):
+        """
+        Creates a new post on WordPress, optionally associating media.
+        """
+        if not self.is_enabled:
+            logger.warning("WordPress publisher is not enabled. Cannot create post.")
+            return None
+
+        payload = {
+            'title': title,
+            'content': content,
+            'status': status,
+        }
+        if media_id:
+            payload['featured_media'] = media_id # Link the media as featured image
+
+        try:
+            logger.info(f"Creating WordPress post: '{title}'")
+            response = requests.post(self.posts_api_url, auth=self._get_auth_headers(), json=payload)
+            response.raise_for_status()
+            post_data = response.json()
+            logger.info(f"Successfully created WordPress post: {post_data.get('link', 'N/A')}")
+            return post_data
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error creating WordPress post: {e}")
+            if 'response' in locals() and response is not None:
+                logger.error(f"WordPress API response: {response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during post creation: {e}")
+            return None
