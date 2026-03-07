@@ -63,9 +63,15 @@ async def handle_new_message(event):
                     post_title = gemini_analysis.get('title', f"GPX Activity: {os.path.basename(gpx_file_path)}")
                     post_summary = gemini_analysis.get('summary', 'No summary generated.')
                     
+                    # Get pace and speed from gpx_stats
+                    pace_per_km = gpx_stats.get('pace_per_km', 0)
+                    speed = gpx_stats.get('speed', 0)
+                    
                     post_content = f"<h2>Activity Summary</h2>"
                     post_content += f"<p>Distance: {gpx_stats.get('distance', 'N/A'):.2f} meters</p>"
                     post_content += f"<p>Duration: {gpx_stats.get('duration', 'N/A'):.2f} seconds</p>"
+                    post_content += f"<p>Pace: {pace_per_km:.2f} min/km</p>"
+                    post_content += f"<p>Speed: {speed:.2f} km/h</p>"
                     post_content += f"<h3>Analysis:</h3><p>{post_summary}</p>"
                     
                     if media_url:
