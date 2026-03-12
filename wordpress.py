@@ -140,6 +140,7 @@ class WordPressPublisher:
             'title': title,
             'content': content,
             'status': status,
+            "categories": [1792]  # 여기서 카테고리를 지정합니다
         }
         if media_id:
             payload['featured_media'] = media_id # Link the media as featured image
