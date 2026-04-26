@@ -4,6 +4,7 @@ import logging
 import requests
 import gpxpy
 import textwrap
+from datetime import datetime
 from google import genai
 
 logger = logging.getLogger(__name__)
@@ -249,13 +250,19 @@ class GeminiAnalyzer(BaseAnalyzer):
         # Load prompt template
         prompt_template = self._load_prompt_template()
         
+        # Extract date (default to current system date if missing)
+        activity_date = gpx_stats.get('date')
+        if not activity_date:
+            activity_date = datetime.now().strftime("%Y-%m-%d")
+            
         # Prepare data dictionary for safe formatting
         data = {
             'distance': distance,
             'duration': duration,
             'pace_per_km': pace_per_km,
             'speed': speed,
-            'weather': weather
+            'weather': weather,
+            'date': activity_date
         }
         
         # Format prompt with data using format_map for safety
@@ -269,7 +276,8 @@ class GeminiAnalyzer(BaseAnalyzer):
                 duration=duration,
                 pace_per_km=pace_per_km,
                 speed=speed,
-                weather=weather
+                weather=weather,
+                date=activity_date
             )
         
         try:
@@ -323,7 +331,7 @@ class LocalLLMAnalyzer(BaseAnalyzer):
     
     def __init__(self):
         self.api_endpoint = os.getenv("LOCAL_LLM_ENDPOINT", "http://ollama:11434/api/generate")
-        self.model_name = os.getenv("LOCAL_LLM_MODEL", "llama3")
+        self.model_name = os.getenv("LOCAL_LLM_MODEL", "gemma4:e4b")
         self.api_key = os.getenv("LOCAL_LLM_API_KEY")
         self.prompt_template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_template.txt')
         logger.info(f"Local LLM configured with endpoint: {self.api_endpoint}, model: {self.model_name}")
@@ -365,13 +373,19 @@ class LocalLLMAnalyzer(BaseAnalyzer):
         # Load prompt template
         prompt_template = self._load_prompt_template()
         
+        # Extract date (default to current system date if missing)
+        activity_date = gpx_stats.get('date')
+        if not activity_date:
+            activity_date = datetime.now().strftime("%Y-%m-%d")
+            
         # Prepare data dictionary for safe formatting
         data = {
             'distance': distance,
             'duration': duration,
             'pace_per_km': pace_per_km,
             'speed': speed,
-            'weather': weather
+            'weather': weather,
+            'date': activity_date
         }
         
         # Format prompt with data using format_map for safety
@@ -385,7 +399,8 @@ class LocalLLMAnalyzer(BaseAnalyzer):
                 duration=duration,
                 pace_per_km=pace_per_km,
                 speed=speed,
-                weather=weather
+                weather=weather,
+                date=activity_date
             )
         
         # Call local LLM
