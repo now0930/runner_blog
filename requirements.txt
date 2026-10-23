@@ -2,5 +2,5 @@
 python-dotenv
 telethon
 gpxpy
-google-genai
+google-genai==2.24.0
 requests

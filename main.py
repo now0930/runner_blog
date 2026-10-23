@@ -6,6 +6,7 @@ import requests
 from telethon import events
 from config import ConfigManager
 from analyzer import create_analyzer
+from gemini_support import AnalysisError
 from processor import GpxProcessor
 from telegram_bot import TelegramManager
 from wordpress import WordPressPublisher
@@ -49,7 +50,12 @@ async def handle_new_message(event):
             
             # Analyze with analyzer (using factory-created instance)
             if _analyzer:
-                gemini_analysis = _analyzer.analyze_gpx_data(gpx_stats)
+                try:
+                    gemini_analysis = _analyzer.analyze_gpx_data(gpx_stats)
+                except AnalysisError as error:
+                    logger.error("Analysis failed; GPX retained at %s; publication skipped: %s",
+                                 gpx_file_path, error)
+                    return
                 
                 if gemini_analysis:
                     logger.info(f"Analyzer completed. Title: {gemini_analysis.get('title')}")

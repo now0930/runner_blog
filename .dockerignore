@@ -1,0 +1,9 @@
+.env
+.env.*
+.git
+.cache
+.aider*
+session
+downloads
+__pycache__
+*.pyc

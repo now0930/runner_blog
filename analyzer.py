@@ -5,7 +5,8 @@ import requests
 import gpxpy
 import textwrap
 from datetime import datetime
-from google import genai
+from gemini_support import (AnalysisError, key_fingerprint, make_client,
+                            safe_error, settings, status_code, generate_with_retry)
 
 logger = logging.getLogger(__name__)
 
@@ -201,15 +202,10 @@ class BaseAnalyzer:
 
 class GeminiAnalyzer(BaseAnalyzer):
     def __init__(self):
-        self.api_key = os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            logger.error("GEMINI_API_KEY not found in environment variables.")
-            raise ValueError("GEMINI_API_KEY is required for Gemini provider")
-        self.client = genai.Client(api_key=self.api_key)
+        self.api_key, self.model_name, self.fallback_model = settings()
+        self.client = make_client(self.api_key)
+        logger.info("Gemini Developer API key fingerprint: %s", key_fingerprint(self.api_key))
 
-        # 환경 변수에서 모델명 로드, 없으면 기본값 사용
-        self.model_name = os.getenv("AY_GEMINI_MODEL", "gemini-2.0-flash")
-        self.fallback_model = os.getenv("AY_GEMINI_FALLBACK_MODEL", "gemini-1.5-flash")
         self.prompt_template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_template.txt')
         logger.info(f"Analyzer initialized with model: {self.model_name}, fallback: {self.fallback_model}")
 
@@ -218,7 +214,7 @@ class GeminiAnalyzer(BaseAnalyzer):
         Sends GPX statistics to Gemini for analysis.
         """
         if not gpx_stats:
-            return {"title": "GPX Activity Analysis", "summary": "No GPX stats provided for analysis."}
+            raise AnalysisError("No GPX stats provided for analysis.")
 
         distance = gpx_stats.get('distance', 0)
         duration = gpx_stats.get('duration', 0)
@@ -280,48 +276,35 @@ class GeminiAnalyzer(BaseAnalyzer):
                 date=activity_date
             )
         
-        try:
-            response = self.client.models.generate_content(model=self.model_name, contents=prompt)
-            # Attempt to parse the response as JSON
-            if not response.text:
-                logger.error("Gemini API returned empty response.")
-                return {"title": "GPX Activity Analysis", "summary": "No response received from Gemini API."}
-            
-            analysis_result = self._validate_json(response.text)
-            if analysis_result:
-                return analysis_result
-            else:
-                logger.error("Gemini API returned invalid JSON response.")
-                return {"title": "GPX Activity Analysis", "summary": response.text}
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to decode JSON response from Gemini. Raw response: {response.text}")
-            return {"title": "GPX Activity Analysis", "summary": response.text}
-        except Exception as e:
-            # Check for 404 errors and log the attempted model name
-            if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
-                if e.response.status_code == 404:
-                    logger.error(f"Model '{self.model_name}' not found (404 error). Attempted model: {self.model_name}. Falling back to {self.fallback_model}.")
-                    # Retry with fallback model
-                    try:
-                        response = self.client.models.generate_content(model=self.fallback_model, contents=prompt)
-                        if not response.text:
-                            logger.error("Gemini API returned empty response for fallback model.")
-                            return {"title": "GPX Activity Analysis", "summary": "No response received from Gemini API."}
-                        
-                        analysis_result = self._validate_json(response.text)
-                        if analysis_result:
-                            return analysis_result
-                        else:
-                            logger.error("Fallback model returned invalid JSON response.")
-                            return {"title": "GPX Activity Analysis", "summary": response.text}
-                    except Exception as fallback_error:
-                        logger.error(f"Fallback model '{self.fallback_model}' also failed: {fallback_error}")
-                        return {"title": "GPX Activity Analysis", "summary": f"An error occurred during analysis: {fallback_error}"}
-                else:
-                    logger.error(f"Error status code: {e.response.status_code}. Error: {e}")
-            else:
-                logger.error(f"Error analyzing with Gemini: {e}")
-            return {"title": "GPX Activity Analysis", "summary": f"An error occurred during analysis: {e}"}
+        return self._generate_analysis(prompt)
+
+    def _generate_analysis(self, prompt):
+        models = [self.model_name]
+        if self.fallback_model and self.fallback_model != self.model_name:
+            models.append(self.fallback_model)
+        for index, model in enumerate(models):
+            try:
+                response = generate_with_retry(self.client,
+                    model=model, contents=prompt,
+                    config={"response_mime_type": "application/json",
+                            "response_schema": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "title": {"type": "STRING"},
+                                    "summary": {"type": "STRING"}},
+                                "required": ["title", "summary"]}})
+            except Exception as error:
+                if status_code(error) == 404 and index + 1 < len(models):
+                    logger.warning("Model %s unavailable; trying configured fallback %s",
+                                   model, models[index + 1])
+                    continue
+                raise AnalysisError(safe_error(error)) from None
+            result = self._validate_json(response.text) if response.text else None
+            if not isinstance(result, dict) or not all(
+                    isinstance(result.get(field), str) and result[field].strip()
+                    for field in ("title", "summary")):
+                raise AnalysisError("Gemini returned empty or invalid analysis JSON; publication skipped.")
+            return {"title": result["title"], "summary": result["summary"]}
 
 
 class LocalLLMAnalyzer(BaseAnalyzer):

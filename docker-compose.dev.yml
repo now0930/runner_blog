@@ -40,8 +40,8 @@ services:
       - "--yes-always"
     # For interactive development, we usually don't want it to auto-restart
     restart: "no"
-    ports:
-      - "8000:8000" # Expose port if Aider runs a web server (not typical for CLI interaction)
+#    ports:
+#      - "8000:8000" # Expose port if Aider runs a web server (not typical for CLI interaction)
 
 # Inherit networks and volumes from the base file
 networks:
