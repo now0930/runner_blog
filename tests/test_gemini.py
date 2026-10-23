@@ -102,8 +102,9 @@ class GeminiTests(unittest.TestCase):
             self.assertEqual(settings(), ("test-key", "primary", "fallback"))
             self.assertFalse(loader.call_args.kwargs["override"])
 
-    def test_factory_always_uses_gemini(self):
-        with patch("analyzer.make_client", return_value=self.client):
+    def test_factory_defaults_to_gemini(self):
+        with patch.dict(os.environ, {'LLM_PROVIDER': 'gemini'}), \
+             patch("analyzer.make_client", return_value=self.client):
             self.assertIsInstance(create_analyzer(), GeminiAnalyzer)
 
     def test_missing_prompt_stops_analysis(self):

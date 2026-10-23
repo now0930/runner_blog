@@ -4,13 +4,39 @@ import logging
 import requests
 import gpxpy
 from datetime import datetime
+from dotenv import load_dotenv
 from gemini_support import (AnalysisError, key_fingerprint, make_client,
                             safe_error, settings, status_code, generate_with_retry)
 
 logger = logging.getLogger(__name__)
 
 class BaseAnalyzer:
+    def __init__(self):
+        self.prompt_template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_template.txt')
+
     def analyze_gpx_data(self, gpx_stats):
+        if not gpx_stats:
+            raise AnalysisError("No GPX stats provided for analysis.")
+
+        distance = gpx_stats.get('distance', 0)
+        duration = gpx_stats.get('duration', 0)
+        pace_per_km, speed = self._calculate_pace(distance, duration)
+        path = gpx_stats.get('gpx_file_path')
+        latitude, longitude = self._extract_start_coordinates(path) if path else (37.35, 126.93)
+        data = {
+            'distance': distance, 'duration': duration,
+            'pace_per_km': pace_per_km, 'speed': speed,
+            'weather': self._get_weather_info(latitude, longitude),
+            'date': gpx_stats.get('date') or datetime.now().strftime('%Y-%m-%d'),
+        }
+        data.update(self._detail_text(gpx_stats))
+        try:
+            prompt = self._load_prompt_template().format_map(data)
+        except (KeyError, ValueError) as error:
+            raise AnalysisError('러닝 분석 프롬프트 형식이 잘못되어 게시를 중단했습니다.') from error
+        return self._generate_analysis(prompt)
+
+    def _generate_analysis(self, prompt):
         raise NotImplementedError
 
     def _validated_analysis(self, result):
@@ -149,82 +175,12 @@ class BaseAnalyzer:
 
 class GeminiAnalyzer(BaseAnalyzer):
     def __init__(self):
+        super().__init__()
         self.api_key, self.model_name, self.fallback_model = settings()
         self.client = make_client(self.api_key)
         logger.info("Gemini Developer API key fingerprint: %s", key_fingerprint(self.api_key))
 
-        self.prompt_template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_template.txt')
         logger.info(f"Analyzer initialized with model: {self.model_name}, fallback: {self.fallback_model}")
-
-    def analyze_gpx_data(self, gpx_stats):
-        """
-        Sends GPX statistics to Gemini for analysis.
-        """
-        if not gpx_stats:
-            raise AnalysisError("No GPX stats provided for analysis.")
-
-        distance = gpx_stats.get('distance', 0)
-        duration = gpx_stats.get('duration', 0)
-        
-        # Calculate pace and speed
-        pace_per_km, speed = self._calculate_pace(distance, duration)
-        
-        # Extract coordinates from GPX data if available
-        gpx_file_path = gpx_stats.get('gpx_file_path')
-        
-        # Validate gpx_file_path before processing
-        if gpx_file_path is None:
-            logger.warning("No GPX file path provided in stats. Using default coordinates.")
-            latitude, longitude = 37.35, 126.93
-        else:
-            # Check if file exists and is not empty
-            if not gpx_file_path or not os.path.exists(gpx_file_path):
-                logger.warning(f"GPX file path is invalid or does not exist: {gpx_file_path}")
-                latitude, longitude = 37.35, 126.93
-            else:
-                latitude, longitude = self._extract_start_coordinates(gpx_file_path)
-        
-        # Get weather info
-        weather = self._get_weather_info(
-            latitude=latitude,
-            longitude=longitude
-        )
-        
-        # Load prompt template
-        prompt_template = self._load_prompt_template()
-        
-        # Extract date (default to current system date if missing)
-        activity_date = gpx_stats.get('date')
-        if not activity_date:
-            activity_date = datetime.now().strftime("%Y-%m-%d")
-            
-        # Prepare data dictionary for safe formatting
-        data = {
-            'distance': distance,
-            'duration': duration,
-            'pace_per_km': pace_per_km,
-            'speed': speed,
-            'weather': weather,
-            'date': activity_date
-        }
-        data.update(self._detail_text(gpx_stats))
-        
-        # Format prompt with data using format_map for safety
-        try:
-            prompt = prompt_template.format_map(data)
-        except KeyError as e:
-            logger.error(f"Missing variable in prompt template: {e}")
-            # Fallback to basic format with all keys provided
-            prompt = prompt_template.format(
-                distance=distance,
-                duration=duration,
-                pace_per_km=pace_per_km,
-                speed=speed,
-                weather=weather,
-                date=activity_date
-            )
-        
-        return self._generate_analysis(prompt)
 
     def _generate_analysis(self, prompt):
         models = [self.model_name]
@@ -253,7 +209,77 @@ class GeminiAnalyzer(BaseAnalyzer):
 
 
 
+class OpenAIAnalyzer(BaseAnalyzer):
+    def __init__(self):
+        super().__init__()
+        load_dotenv(os.path.join(os.path.dirname(__file__), '.env'), override=False)
+        self.api_key = os.getenv('OPENAI_API_KEY', '').strip()
+        if not self.api_key or self.api_key == 'your_openai_api_key':
+            raise AnalysisError('OPENAI_API_KEY를 .env에 설정하세요.')
+        self.model_name = os.getenv('OPENAI_MODEL', '').strip() or 'gpt-6-luna'
+        logger.info('OpenAI analyzer initialized with model: %s', self.model_name)
+
+    def _generate_analysis(self, prompt):
+        schema = {
+            'type': 'object', 'additionalProperties': False,
+            'properties': {
+                'title': {'type': 'string'}, 'summary': {'type': 'string'},
+                'training': {'type': 'array', 'items': {'type': 'string'}}},
+            'required': ['title', 'summary', 'training']}
+        try:
+            response = requests.post(
+                'https://api.openai.com/v1/responses',
+                headers={'Authorization': f'Bearer {self.api_key}', 'Content-Type': 'application/json'},
+                json={'model': self.model_name, 'input': prompt, 'store': False,
+                      'text': {'format': {'type': 'json_schema', 'name': 'running_analysis',
+                                          'strict': True, 'schema': schema}}},
+                timeout=120)
+            if response.status_code != 200:
+                raise AnalysisError(f'OpenAI 분석 요청 실패(HTTP {response.status_code}); 게시를 중단했습니다.')
+            payload = response.json()
+            if payload.get('status') != 'completed':
+                raise AnalysisError('OpenAI 분석이 완료되지 않아 게시를 중단했습니다.')
+            texts = [part.get('text', '') for item in payload.get('output', [])
+                     if item.get('type') == 'message' for part in item.get('content', [])
+                     if part.get('type') == 'output_text']
+            return self._validated_analysis(self._validate_json(''.join(texts)))
+        except requests.exceptions.RequestException:
+            raise AnalysisError('OpenAI 연결 실패로 게시를 중단했습니다.') from None
+        except (ValueError, TypeError, KeyError):
+            raise AnalysisError('OpenAI 응답을 해석할 수 없어 게시를 중단했습니다.') from None
+
+
+class LocalLLMAnalyzer(BaseAnalyzer):
+    def __init__(self):
+        super().__init__()
+        load_dotenv(os.path.join(os.path.dirname(__file__), '.env'), override=False)
+        self.api_endpoint = os.getenv('LOCAL_LLM_ENDPOINT', '').strip() or 'http://ollama:11434/api/generate'
+        self.model_name = os.getenv('LOCAL_LLM_MODEL', '').strip() or 'gemma4:e4b'
+        logger.info('Local analyzer initialized with model: %s', self.model_name)
+
+    def _generate_analysis(self, prompt):
+        try:
+            response = requests.post(self.api_endpoint,
+                                     json={'model': self.model_name, 'prompt': prompt,
+                                           'format': 'json', 'stream': False}, timeout=120)
+            if response.status_code != 200:
+                raise AnalysisError(f'로컬 모델 분석 실패(HTTP {response.status_code}); 게시를 중단했습니다.')
+            result = response.json()
+            if result.get('done') is False:
+                raise AnalysisError('로컬 모델 분석이 완료되지 않아 게시를 중단했습니다.')
+            return self._validated_analysis(self._validate_json(result.get('response', '')))
+        except requests.exceptions.RequestException:
+            raise AnalysisError('로컬 모델 연결 실패로 게시를 중단했습니다.') from None
+        except (ValueError, TypeError, KeyError):
+            raise AnalysisError('로컬 모델 응답을 해석할 수 없어 게시를 중단했습니다.') from None
+
+
 def create_analyzer(config=None):
-    """Always use Gemini for running analysis and publication."""
-    logger.info("Creating GeminiAnalyzer...")
-    return GeminiAnalyzer()
+    """Select one provider explicitly; never silently change data destination."""
+    load_dotenv(os.path.join(os.path.dirname(__file__), '.env'), override=False)
+    provider = (getattr(config, 'LLM_PROVIDER', None) or os.getenv('LLM_PROVIDER', 'gemini')).strip().lower()
+    analyzers = {'gemini': GeminiAnalyzer, 'openai': OpenAIAnalyzer, 'local': LocalLLMAnalyzer}
+    if provider not in analyzers:
+        raise AnalysisError(f'지원하지 않는 LLM_PROVIDER: {provider}')
+    logger.info('Creating %s analyzer', provider)
+    return analyzers[provider]()

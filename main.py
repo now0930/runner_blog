@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 _config = None
 _telegram_manager = None
 _gpx_processor = None
-_gemini_analyzer = None
 _wordpress_publisher = None
 _target_chat = None
 _analyzer = None
@@ -52,7 +51,7 @@ async def handle_new_message(event):
             # Analyze with analyzer (using factory-created instance)
             if _analyzer:
                 try:
-                    gemini_analysis = _analyzer.analyze_gpx_data(gpx_stats)
+                    analysis = _analyzer.analyze_gpx_data(gpx_stats)
                 except AnalysisError as error:
                     logger.error("Analysis failed; GPX retained at %s; publication skipped: %s",
                                  gpx_file_path, error)
@@ -61,8 +60,8 @@ async def handle_new_message(event):
                     logger.exception("Unexpected error during analysis: %s", ex)
                     return
                 
-                if gemini_analysis:
-                    logger.info(f"Analyzer completed. Title: {gemini_analysis.get('title')}")
+                if analysis:
+                    logger.info(f"Analyzer completed. Title: {analysis.get('title')}")
                     
                     # Upload GPX to WordPress Media Library
                     media_id, media_url, source_url = None, None, None
@@ -89,8 +88,8 @@ async def handle_new_message(event):
                         logger.warning("File check timed out, proceeding anyway.")
                     
                     # Prepare content for WordPress post
-                    post_title = gemini_analysis.get('title', f"GPX Activity: {file_name}")
-                    post_content = render_report(gpx_stats, gemini_analysis, file_name)
+                    post_title = analysis.get('title', f"GPX Activity: {file_name}")
+                    post_content = render_report(gpx_stats, analysis, file_name)
                     
                     # Create WordPress post directly with shortcode (do NOT set GPX as featured_media)
                     if _wordpress_publisher and _wordpress_publisher.is_enabled:
