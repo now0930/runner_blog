@@ -30,4 +30,3 @@ services:
 networks:
   default:
     name: runner_network
-    external: true
