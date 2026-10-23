@@ -1,0 +1,6 @@
+session/
+downloads/
+__pycache__/
+.aider_config/
+*.bak
+.env
