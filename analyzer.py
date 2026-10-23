@@ -22,11 +22,12 @@ class BaseAnalyzer:
         duration = gpx_stats.get('duration', 0)
         pace_per_km, speed = self._calculate_pace(distance, duration)
         path = gpx_stats.get('gpx_file_path')
-        latitude, longitude = self._extract_start_coordinates(path) if path else (37.35, 126.93)
+        latitude, longitude = self._extract_start_coordinates(path) if path else (None, None)
+        weather = self._get_weather_info(latitude, longitude, gpx_stats.get('date'))
         data = {
             'distance': distance, 'duration': duration,
             'pace_per_km': pace_per_km, 'speed': speed,
-            'weather': self._get_weather_info(latitude, longitude),
+            'weather': weather,
             'date': gpx_stats.get('date') or datetime.now().strftime('%Y-%m-%d'),
         }
         data.update(self._detail_text(gpx_stats))
@@ -34,7 +35,9 @@ class BaseAnalyzer:
             prompt = self._load_prompt_template().format_map(data)
         except (KeyError, ValueError) as error:
             raise AnalysisError('러닝 분석 프롬프트 형식이 잘못되어 게시를 중단했습니다.') from error
-        return self._generate_analysis(prompt)
+        analysis = self._generate_analysis(prompt)
+        analysis['weather'] = weather
+        return analysis
 
     def _generate_analysis(self, prompt):
         raise NotImplementedError
@@ -89,15 +92,11 @@ class BaseAnalyzer:
         Returns:
             tuple: (latitude, longitude) or (None, None) if extraction fails
         """
-        # Default coordinates for Gupo
-        default_lat = 37.35
-        default_lon = 126.93
-        
         try:
             if isinstance(gpx_data, str):
                 if not gpx_data or not os.path.exists(gpx_data):
                     logger.warning(f"GPX file path is empty or does not exist: {gpx_data}")
-                    return (default_lat, default_lon)
+                    return (None, None)
                 
                 with open(gpx_data, 'r', encoding='utf-8') as f:
                     gpx = gpxpy.parse(f)
@@ -106,7 +105,7 @@ class BaseAnalyzer:
             
             if gpx is None:
                 logger.warning("GPX object is None after parsing.")
-                return (default_lat, default_lon)
+                return (None, None)
             
             if gpx.tracks:
                 first_track = gpx.tracks[0]
@@ -117,47 +116,41 @@ class BaseAnalyzer:
                         return (first_point.latitude, first_point.longitude)
             
             logger.warning("No track points found in GPX data.")
-            return (default_lat, default_lon)
+            return (None, None)
             
         except Exception as e:
             logger.error(f"Failed to extract coordinates from GPX data: {e}")
-            return (default_lat, default_lon)
+            return (None, None)
 
-    def _get_weather_info(self, latitude=None, longitude=None):
-        """Get weather information from Open-Meteo API.
-        
-        Args:
-            latitude: Latitude coordinate (optional)
-            longitude: Longitude coordinate (optional)
-            
-        Returns:
-            str: Weather information string including temperature
-        """
-        if latitude is None or longitude is None:
-            logger.info("Weather info requested without coordinates. Using placeholder.")
-            return "현재 날씨 정보 없음"
-        
+    def _get_weather_info(self, latitude=None, longitude=None, activity_date=None):
+        """Get historical hourly reanalysis for the run's first local hour."""
+        unavailable = '운동 당시 날씨 자료 없음'
+        if latitude is None or longitude is None or not activity_date:
+            return unavailable
         try:
-            # Open-Meteo API endpoint for current weather
-            url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m"
-            
-            response = requests.get(url, timeout=10)
+            started = datetime.strptime(activity_date, '%Y-%m-%d %H:%M')
+            hour = started.strftime('%Y-%m-%dT%H:00')
+            response = requests.get('https://archive-api.open-meteo.com/v1/archive', params={
+                'latitude': latitude, 'longitude': longitude,
+                'start_date': started.date().isoformat(), 'end_date': started.date().isoformat(),
+                'hourly': 'temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation',
+                'timezone': 'Asia/Seoul',
+            }, timeout=10)
             response.raise_for_status()
-            
-            data = response.json()
-            temperature = data['current']['temperature_2m']
-            
-            return f"현재 날씨: {temperature:.1f}°C"
-            
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Failed to fetch weather data from Open-Meteo: {e}")
-            return "현재 날씨 정보 없음"
-        except (KeyError, TypeError) as e:
-            logger.warning(f"Unexpected response format from Open-Meteo: {e}")
-            return "현재 날씨 정보 없음"
-        except Exception as e:
-            logger.error(f"Unexpected error fetching weather data: {e}")
-            return "현재 날씨 정보 없음"
+            hourly = response.json()['hourly']
+            index = hourly['time'].index(hour)
+            values = {name: hourly[name][index] for name in
+                      ('temperature_2m', 'relative_humidity_2m', 'wind_speed_10m', 'precipitation')}
+            if any(value is None or not isinstance(value, (int, float)) for value in values.values()):
+                return unavailable
+            return (f'운동 시작 시간대 과거 날씨 추정치 ({hour.replace("T", " ")} KST, Open-Meteo): '
+                    f'기온 {values["temperature_2m"]:.1f}°C, '
+                    f'습도 {values["relative_humidity_2m"]:.0f}%, '
+                    f'풍속 {values["wind_speed_10m"]:.1f}km/h, '
+                    f'강수량 {values["precipitation"]:.1f}mm')
+        except (ValueError, KeyError, IndexError, TypeError, requests.exceptions.RequestException) as error:
+            logger.warning('Historical weather unavailable: %s', type(error).__name__)
+            return unavailable
 
     def _load_prompt_template(self):
         """Load the required running-analysis prompt."""

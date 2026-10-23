@@ -48,6 +48,9 @@ def render_report(stats, analysis, file_name):
             '</tbody></table>']
     if stats.get('date'):
         html.append(f'<p>운동 시각: {escape(stats["date"])} ~ {escape(stats.get("end_date") or "기록 없음")} (한국 시간)</p>')
+    weather = (analysis or {}).get('weather')
+    if weather:
+        html.append(f'<p>날씨: {escape(weather)}</p>')
 
     if splits:
         html += ['<h2>구간별 기록</h2>',
