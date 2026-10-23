@@ -7,6 +7,35 @@ import gpxpy
 
 logger = logging.getLogger(__name__)
 
+WALKING_TYPES = {'walking', 'walk', 'hiking', 'hike', '걷기', '산책', '등산'}
+RUNNING_TYPES = {'running', 'run', 'jogging', '러닝', '달리기'}
+
+
+def _activity_type(gpx, segments, cadence):
+    """Prefer GPX activity metadata; use moving speed only when absent."""
+    declared = [(track.type or '').strip().lower() for track in gpx.tracks]
+    if any(value in RUNNING_TYPES for value in declared):
+        return 'running'
+    if any(value in WALKING_TYPES for value in declared):
+        return 'walking'
+
+    moving_distance = moving_seconds = 0.0
+    for segment in segments:
+        for first, second in zip(segment.points, segment.points[1:]):
+            if not first.time or not second.time:
+                continue
+            seconds = (second.time - first.time).total_seconds()
+            meters = first.distance_2d(second) or 0
+            speed = meters / seconds * 3.6 if seconds > 0 else 0
+            if meters >= 2 and 1 <= speed <= 15:
+                moving_distance += meters
+                moving_seconds += seconds
+    if moving_distance >= 100 and moving_seconds > 0:
+        moving_speed = moving_distance / moving_seconds * 3.6
+        if moving_speed <= 6.5 and (cadence is None or cadence <= 140):
+            return 'walking'
+    return 'running'
+
 
 def _extension(point, name):
     for extension in point.extensions:
@@ -40,6 +69,7 @@ class GpxProcessor:
             elevations = [point.elevation for point in points if point.elevation is not None]
             heart_rates = [_extension(point, 'hr') for point in points]
             cadences = [_extension(point, 'cad') for point in points]
+            cadence_avg = _average([v for v in cadences if v is not None])
             distance = sum(segment.length_2d() for segment in segments)
             duration = sum(max(0, (segment.points[-1].time - segment.points[0].time).total_seconds())
                            for segment in segments if len(segment.points) > 1
@@ -89,9 +119,10 @@ class GpxProcessor:
                 'date': started.astimezone(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d %H:%M') if started else None,
                 'end_date': ended.astimezone(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d %H:%M') if ended else None,
                 'point_count': len(points), 'splits': splits,
+                'activity_type': _activity_type(gpx, segments, cadence_avg),
                 'heart_rate_avg': _average([v for v in heart_rates if v is not None]),
                 'heart_rate_max': max((v for v in heart_rates if v is not None), default=None),
-                'cadence_avg': _average([v for v in cadences if v is not None]),
+                'cadence_avg': cadence_avg,
                 'cadence_max': max((v for v in cadences if v is not None), default=None),
                 'elevation_min': round(min(elevations), 1) if elevations else None,
                 'elevation_max': round(max(elevations), 1) if elevations else None,

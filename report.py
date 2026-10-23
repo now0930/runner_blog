@@ -22,6 +22,16 @@ def _metric(value, unit='', digits=0):
     return f'{value:.{digits}f}{unit}' if value is not None else '자료 없음'
 
 
+def render_walking_report(stats):
+    """Walking posts contain only measured total distance and duration."""
+    distance = stats['distance'] / 1000
+    duration = _duration(stats['duration'])
+    title = f'걷기 기록: {distance:.2f}km · {duration}'
+    content = (f'<p>총 거리: {distance:.2f}km</p>\n'
+               f'<p>총 시간: {escape(duration)}</p>')
+    return title, content
+
+
 def render_report(stats, analysis, file_name):
     """Render measured stats separately from the model's prose."""
     distance, duration = stats.get('distance'), stats.get('duration')

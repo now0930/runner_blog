@@ -8,7 +8,7 @@ from config import ConfigManager
 from analyzer import create_analyzer
 from gemini_support import AnalysisError
 from processor import GpxProcessor
-from report import render_report
+from report import render_report, render_walking_report
 from telegram_bot import TelegramManager
 from wordpress import WordPressPublisher
 
@@ -47,6 +47,22 @@ async def handle_new_message(event):
         
         if gpx_stats:
             logger.info(f"GPX stats processed: {gpx_stats}")
+
+            if gpx_stats.get('activity_type') == 'walking':
+                if not gpx_stats.get('distance') or not gpx_stats.get('duration'):
+                    logger.error("Walking GPX lacks distance or duration; publication skipped: %s", gpx_file_path)
+                    return
+                title, content = render_walking_report(gpx_stats)
+                if _wordpress_publisher and _wordpress_publisher.is_enabled:
+                    post_data = _wordpress_publisher.create_post(
+                        title=title, content=content, status='publish', featured_media_id=None)
+                    if post_data:
+                        logger.info("Published walking post: %s", post_data.get('id'))
+                    else:
+                        logger.error("Failed to publish walking GPX: %s", gpx_file_path)
+                else:
+                    logger.warning("WordPress publisher not enabled, skipping walking post.")
+                return
             
             # Analyze with analyzer (using factory-created instance)
             if _analyzer:
