@@ -16,8 +16,12 @@ class WordPressPublisher:
         self.password = self.config.WORDPRESS_PASSWORD
         
         # Safely construct API URLs with rstrip to handle trailing slashes
-        self.posts_api_url = f"{self.base_url.rstrip('/')}/wp-json/wp/v2/posts"
-        self.media_api_url = f"{self.base_url.rstrip('/')}/wp-json/wp/v2/media"
+        if self.base_url:
+            self.posts_api_url = f"{self.base_url.rstrip('/')}/wp-json/wp/v2/posts"
+            self.media_api_url = f"{self.base_url.rstrip('/')}/wp-json/wp/v2/media"
+        else:
+            self.posts_api_url = None
+            self.media_api_url = None
 
         # Debug logging for WordPressPublisher initialization
         if not self.config.WORDPRESS_URL:
@@ -77,15 +81,24 @@ class WordPressPublisher:
         file_name = os.path.basename(file_path)
         try:
             with open(file_path, 'rb') as f:
-                files = {'file': (file_name, f)}
-                # Set Content-Disposition header for WordPress to recognize filename
+                # Specify MIME type explicitly as application/gpx+xml
+                files = {'file': (file_name, f, 'application/gpx+xml')}
                 headers = {
                     'Content-Disposition': f'attachment; filename="{file_name}"'
                 }
                 
                 logger.info(f"Uploading {file_name} to WordPress media library...")
-                response = requests.post(self.media_api_url, auth=self._get_auth_headers(), files=files, headers=headers)
-                response.raise_for_status()
+                response = requests.post(
+                    self.media_api_url,
+                    auth=self._get_auth_headers(),
+                    files=files,
+                    headers=headers,
+                    timeout=30
+                )
+                if response.status_code not in (200, 201):
+                    logger.error(f"WordPress media upload failed with status {response.status_code}: {response.text}")
+                    return None, None, None
+
                 media_data = response.json()
                 media_id = media_data.get('id')
                 media_url = media_data.get('source_url')
@@ -97,8 +110,6 @@ class WordPressPublisher:
             return None, None, None
         except requests.exceptions.RequestException as e:
             logger.error(f"Error uploading media to WordPress: {e}")
-            if 'response' in locals() and response is not None:
-                logger.error(f"WordPress API response: {response.text}")
             return None, None, None
         except Exception as e:
             logger.error(f"An unexpected error occurred during media upload: {e}")
@@ -118,8 +129,11 @@ class WordPressPublisher:
                         dst.write(src.read())
                 
                 # Adjust permissions (readable by web server)
-                os.chmod(target_path, 0o644)
-                logger.info(f"File copied and permissions adjusted: {target_path}")
+                try:
+                    os.chmod(target_path, 0o644)
+                except OSError as perm_err:
+                    logger.warning(f"Could not change permissions for {target_path}: {perm_err}")
+                logger.info(f"File copied: {target_path}")
                 return True
             else:
                 logger.info(f"File already exists at {target_path}")
@@ -128,9 +142,10 @@ class WordPressPublisher:
             logger.error(f"Failed to copy file to expected location: {e}")
             return False
 
-    def create_post(self, title, content, status='publish', media_id=None):
+    def create_post(self, title, content, status='publish', featured_media_id=None):
         """
-        Creates a new post on WordPress, optionally associating media.
+        Creates a new post on WordPress, optionally associating featured media.
+        Note: Non-image media (like GPX) must NOT be passed to featured_media_id.
         """
         if not self.is_enabled:
             logger.warning("WordPress publisher is not enabled. Cannot create post.")
@@ -140,27 +155,29 @@ class WordPressPublisher:
             'title': title,
             'content': content,
             'status': status,
-            "categories": [1792]  # 여기서 카테고리를 지정합니다
+            "categories": [1792]
         }
-        if media_id:
-            payload['featured_media'] = media_id # Link the media as featured image
+        if featured_media_id:
+            payload['featured_media'] = featured_media_id
 
         try:
             logger.info(f"Creating WordPress post: '{title}'")
-            response = requests.post(self.posts_api_url, auth=self._get_auth_headers(), json=payload)
+            response = requests.post(
+                self.posts_api_url,
+                auth=self._get_auth_headers(),
+                json=payload,
+                timeout=30
+            )
             
-            # Log response text if not successful (201 Created)
             if response.status_code != 201:
-                logger.error(f"WordPress API error (Status {response.status_code}): {response.text}")
+                logger.error(f"WordPress post creation failed (Status {response.status_code}): {response.text}")
+                return None
             
-            response.raise_for_status()
             post_data = response.json()
-            logger.info(f"Successfully created WordPress post: {post_data.get('link', 'N/A')}")
+            logger.info(f"Successfully created WordPress post ID {post_data.get('id')}: {post_data.get('link', 'N/A')}")
             return post_data
         except requests.exceptions.RequestException as e:
             logger.error(f"Error creating WordPress post: {e}")
-            if 'response' in locals() and response is not None:
-                logger.error(f"WordPress API response: {response.text}")
             return None
         except Exception as e:
             logger.error(f"An unexpected error occurred during post creation: {e}")
