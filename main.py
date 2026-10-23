@@ -8,6 +8,7 @@ from config import ConfigManager
 from analyzer import create_analyzer
 from gemini_support import AnalysisError
 from processor import GpxProcessor
+from report import render_report
 from telegram_bot import TelegramManager
 from wordpress import WordPressPublisher
 
@@ -89,16 +90,7 @@ async def handle_new_message(event):
                     
                     # Prepare content for WordPress post
                     post_title = gemini_analysis.get('title', f"GPX Activity: {file_name}")
-                    post_summary = gemini_analysis.get('summary', 'No summary generated.')
-                    
-                    shortcode_path = f"/wp-content/uploads/gpx/{file_name}"
-                    shortcode = f'[sgpx gpx="{shortcode_path}"]'
-                    
-                    post_content = f"<h2>Activity Summary</h2>"
-                    post_content += f"<p>Distance: {gpx_stats.get('distance', 'N/A'):.2f} meters</p>"
-                    post_content += f"<p>Duration: {gpx_stats.get('duration', 'N/A'):.2f} seconds</p>"
-                    post_content += f"<h3>Analysis:</h3><p>{post_summary}</p>"
-                    post_content += f'<p>{shortcode}</p>'
+                    post_content = render_report(gpx_stats, gemini_analysis, file_name)
                     
                     # Create WordPress post directly with shortcode (do NOT set GPX as featured_media)
                     if _wordpress_publisher and _wordpress_publisher.is_enabled:

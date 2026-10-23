@@ -21,4 +21,3 @@ class ConfigManager:
         self.WORDPRESS_URL = os.getenv("WORDPRESS_URL")
         self.WORDPRESS_USERNAME = os.getenv("WORDPRESS_USERNAME")
         self.WORDPRESS_PASSWORD = os.getenv("WORDPRESS_PASSWORD")
-        self.LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")

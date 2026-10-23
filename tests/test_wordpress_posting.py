@@ -19,7 +19,8 @@ class WordPressPostingPipelineTests(unittest.IsolatedAsyncioTestCase):
         analyzer = Mock()
         analyzer.analyze_gpx_data.return_value = {
             "title": "Evening Run",
-            "summary": "A pleasant evening run."
+            "summary": "A pleasant evening run.",
+            "training": ["Keep the next run easy."]
         }
         publisher = Mock()
         publisher.is_enabled = True
@@ -57,7 +58,7 @@ class WordPressPostingPipelineTests(unittest.IsolatedAsyncioTestCase):
         gpx_processor = Mock()
         gpx_processor.process.return_value = {"distance": 1000.0, "duration": 600.0}
         analyzer = Mock()
-        analyzer.analyze_gpx_data.return_value = {"title": "Short Walk", "summary": "Walk"}
+        analyzer.analyze_gpx_data.return_value = {"title": "Short Walk", "summary": "Walk", "training": ["Rest as needed."]}
 
         publisher = Mock()
         publisher.is_enabled = False

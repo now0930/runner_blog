@@ -20,7 +20,7 @@ def main():
             from analyzer import GeminiAnalyzer
             analyzer = GeminiAnalyzer()
             try:
-                analyzer._generate_analysis('Return JSON with title "Test" and summary "OK".')
+                analyzer._generate_analysis('Return JSON with title "Test", summary "OK", and training ["Rest"].')
             finally:
                 analyzer.client.close()
             print("PASS: authenticated generation and valid analysis JSON; nothing published.")

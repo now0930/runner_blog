@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from google.genai.errors import ClientError
-from analyzer import GeminiAnalyzer
+from analyzer import GeminiAnalyzer, create_analyzer
 from gemini_support import AnalysisError, make_client, safe_error, settings
 
 
@@ -25,8 +25,8 @@ class GeminiTests(unittest.TestCase):
             self.analyzer = GeminiAnalyzer()
 
     def test_success(self):
-        self.client.models.generate_content.return_value.text = '{"title":"Run","summary":"Good"}'
-        self.assertEqual(self.analyzer._generate_analysis("test"), {"title":"Run","summary":"Good"})
+        self.client.models.generate_content.return_value.text = '{"title":"Run","summary":"Good","training":["Rest or easy run"]}'
+        self.assertEqual(self.analyzer._generate_analysis("test"), {"title":"Run","summary":"Good","training":["Rest or easy run"]})
 
     def test_billing_auth_quota_never_fallback_or_publishable_result(self):
         for code in (402, 400, 401, 403, 429):
@@ -40,7 +40,7 @@ class GeminiTests(unittest.TestCase):
 
     def test_server_error_recovers_with_same_model(self):
         self.client.models.generate_content.side_effect = [api_error(503), api_error(503),
-            SimpleNamespace(text='{"title":"Run","summary":"Good"}')]
+            SimpleNamespace(text='{"title":"Run","summary":"Good","training":["Rest or easy run"]}')]
         with patch("gemini_support.random.uniform", return_value=0):
             self.assertEqual(self.analyzer._generate_analysis("test")["title"], "Run")
         self.assertEqual([c.args[0] for c in self.sleep.call_args_list], [2, 4])
@@ -68,7 +68,7 @@ class GeminiTests(unittest.TestCase):
 
     def test_sdk_404_fallback(self):
         self.client.models.generate_content.side_effect = [api_error(404),
-            SimpleNamespace(text='{"title":"Run","summary":"Good"}')]
+            SimpleNamespace(text='{"title":"Run","summary":"Good","training":["Rest or easy run"]}')]
         self.analyzer._generate_analysis("test")
         self.assertEqual([c.kwargs["model"] for c in self.client.models.generate_content.call_args_list],
                          ["primary", "fallback"])
@@ -101,6 +101,15 @@ class GeminiTests(unittest.TestCase):
         with patch("gemini_support.load_dotenv") as loader:
             self.assertEqual(settings(), ("test-key", "primary", "fallback"))
             self.assertFalse(loader.call_args.kwargs["override"])
+
+    def test_factory_always_uses_gemini(self):
+        with patch("analyzer.make_client", return_value=self.client):
+            self.assertIsInstance(create_analyzer(), GeminiAnalyzer)
+
+    def test_missing_prompt_stops_analysis(self):
+        self.analyzer.prompt_template_path = '/missing/running-prompt.txt'
+        with self.assertRaises(AnalysisError):
+            self.analyzer._load_prompt_template()
 
 
 class PublicationTests(unittest.IsolatedAsyncioTestCase):

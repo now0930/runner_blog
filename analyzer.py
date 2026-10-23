@@ -3,7 +3,6 @@ import json
 import logging
 import requests
 import gpxpy
-import textwrap
 from datetime import datetime
 from gemini_support import (AnalysisError, key_fingerprint, make_client,
                             safe_error, settings, status_code, generate_with_retry)
@@ -13,6 +12,36 @@ logger = logging.getLogger(__name__)
 class BaseAnalyzer:
     def analyze_gpx_data(self, gpx_stats):
         raise NotImplementedError
+
+    def _validated_analysis(self, result):
+        if not isinstance(result, dict) or not all(
+                isinstance(result.get(field), str) and result[field].strip()
+                for field in ('title', 'summary')):
+            raise AnalysisError('Model returned empty or invalid analysis JSON; publication skipped.')
+        training = result.get('training')
+        if (not isinstance(training, list) or not 1 <= len(training) <= 3 or
+                not all(isinstance(item, str) and item.strip() for item in training)):
+            raise AnalysisError('Model returned no valid training recommendations; publication skipped.')
+        return {'title': result['title'].strip(), 'summary': result['summary'].strip(),
+                'training': [item.strip() for item in training]}
+
+    def _detail_text(self, stats):
+        rows = []
+        for split in stats.get('splits') or []:
+            seconds = split.get('duration')
+            rows.append(f'{split["km"]}구간 {split["distance"] / 1000:.2f}km, '
+                        f'{seconds if seconds is not None else "미상"}초, '
+                        f'심박 {split.get("heart_rate")}, 케이던스 {split.get("cadence")}, '
+                        f'고도 {split.get("elevation")}m')
+        return {
+            'splits_text': '; '.join(rows) if rows else '구간 기록 없음',
+            'heart_rate_text': (f'평균 {stats["heart_rate_avg"]}bpm, 최대 {stats.get("heart_rate_max")}bpm'
+                                if stats.get('heart_rate_avg') is not None else '기록 없음'),
+            'cadence_text': (f'평균 {stats["cadence_avg"]}spm, 최대 {stats.get("cadence_max")}spm'
+                             if stats.get('cadence_avg') is not None else '기록 없음'),
+            'elevation_text': (f'최저 {stats["elevation_min"]}m, 최고 {stats.get("elevation_max")}m'
+                               if stats.get('elevation_min') is not None else '기록 없음'),
+        }
 
     def _calculate_pace(self, distance_meters, duration_seconds):
         """Calculate pace per km (min/km) and speed (km/h)."""
@@ -105,100 +134,18 @@ class BaseAnalyzer:
             return "현재 날씨 정보 없음"
 
     def _load_prompt_template(self):
-        """Load prompt template from file with fallback."""
+        """Load the required running-analysis prompt."""
         try:
             with open(self.prompt_template_path, 'r', encoding='utf-8') as f:
                 return f.read()
-        except FileNotFoundError:
-            logger.warning(f"Prompt template file not found at {self.prompt_template_path}. Using default prompt.")
-            return textwrap.dedent(f"""
-                Analyze these GPX statistics for a blog post:
-
-                Distance: {{distance}} meters
-                Duration: {{duration}} seconds
-                Pace per km: {{pace_per_km}} min/km
-                Speed: {{speed}} km/h
-                Weather: {{weather}}
-
-                Provide a brief, engaging summary of the activity, suitable for a blog post.
-                If possible, suggest a title for the blog post.
-                Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}
-            """)
-        except Exception as e:
-            logger.error(f"Error reading prompt template: {e}")
-            return textwrap.dedent(f"""
-                Analyze these GPX statistics for a blog post:
-
-                Distance: {{distance}} meters
-                Duration: {{duration}} seconds
-                Pace per km: {{pace_per_km}} min/km
-                Speed: {{speed}} km/h
-                Weather: {{weather}}
-
-                Provide a brief, engaging summary of the activity, suitable for a blog post.
-                If possible, suggest a title for the blog post.
-                Format the output as JSON: {{"title": "Suggested Title", "summary": "Blog post summary"}}
-            """)
+        except OSError as error:
+            raise AnalysisError('러닝 분석 프롬프트를 읽을 수 없어 게시를 중단했습니다.') from error
 
     def _validate_json(self, text):
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             return None
-
-    def _call_llm(self, prompt, model_name, api_endpoint=None, api_key=None):
-        """Call LLM API and return parsed JSON response.
-        
-        Args:
-            prompt: The prompt to send to the LLM
-            model_name: The model name to use
-            api_endpoint: The API endpoint (for local LLM)
-            api_key: API key if required
-            
-        Returns:
-            dict: Parsed JSON response or error message
-        """
-        try:
-            if api_endpoint:
-                # Local LLM (e.g., Ollama)
-                headers = {"Content-Type": "application/json"}
-                if api_key:
-                    headers["Authorization"] = f"Bearer {api_key}"
-                
-                payload = {
-                    "model": model_name,
-                    "prompt": prompt,
-                    "format": "json"
-                }
-                
-                response = requests.post(api_endpoint, json=payload, headers=headers, timeout=60)
-                response.raise_for_status()
-                
-                result = response.json()
-                
-                # Ollama returns response in 'response' field
-                if 'response' in result:
-                    text = result['response']
-                elif 'message' in result and 'content' in result['message']:
-                    text = result['message']['content']
-                else:
-                    text = str(result)
-                
-                return self._validate_json(text)
-            else:
-                # Remote LLM (e.g., Gemini)
-                return None
-                
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Failed to call LLM API: {e}")
-            return None
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to decode LLM response: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error calling LLM: {e}")
-            return None
-
 
 class GeminiAnalyzer(BaseAnalyzer):
     def __init__(self):
@@ -260,6 +207,7 @@ class GeminiAnalyzer(BaseAnalyzer):
             'weather': weather,
             'date': activity_date
         }
+        data.update(self._detail_text(gpx_stats))
         
         # Format prompt with data using format_map for safety
         try:
@@ -291,8 +239,9 @@ class GeminiAnalyzer(BaseAnalyzer):
                                 "type": "OBJECT",
                                 "properties": {
                                     "title": {"type": "STRING"},
-                                    "summary": {"type": "STRING"}},
-                                "required": ["title", "summary"]}})
+                                    "summary": {"type": "STRING"},
+                                    "training": {"type": "ARRAY", "items": {"type": "STRING"}}},
+                                "required": ["title", "summary", "training"]}})
             except Exception as error:
                 if status_code(error) == 404 and index + 1 < len(models):
                     logger.warning("Model %s unavailable; trying configured fallback %s",
@@ -300,142 +249,11 @@ class GeminiAnalyzer(BaseAnalyzer):
                     continue
                 raise AnalysisError(safe_error(error)) from None
             result = self._validate_json(response.text) if response.text else None
-            if not isinstance(result, dict) or not all(
-                    isinstance(result.get(field), str) and result[field].strip()
-                    for field in ("title", "summary")):
-                raise AnalysisError("Gemini returned empty or invalid analysis JSON; publication skipped.")
-            return {"title": result["title"], "summary": result["summary"]}
+            return self._validated_analysis(result)
 
 
-class LocalLLMAnalyzer(BaseAnalyzer):
-    """
-    Local LLM analyzer that connects to a local LLM service (e.g., Ollama).
-    """
-    
-    def __init__(self):
-        self.api_endpoint = os.getenv("LOCAL_LLM_ENDPOINT", "http://ollama:11434/api/generate")
-        self.model_name = os.getenv("LOCAL_LLM_MODEL", "gemma4:e4b")
-        self.api_key = os.getenv("LOCAL_LLM_API_KEY")
-        self.prompt_template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_template.txt')
-        logger.info(f"Local LLM configured with endpoint: {self.api_endpoint}, model: {self.model_name}")
 
-    def analyze_gpx_data(self, gpx_stats):
-        """
-        Analyzes GPX statistics using a local LLM.
-        """
-        if not gpx_stats:
-            return {"title": "GPX Activity Analysis", "summary": "No GPX stats provided for analysis."}
-
-        distance = gpx_stats.get('distance', 0)
-        duration = gpx_stats.get('duration', 0)
-        
-        # Calculate pace and speed
-        pace_per_km, speed = self._calculate_pace(distance, duration)
-        
-        # Extract coordinates from GPX data if available
-        gpx_file_path = gpx_stats.get('gpx_file_path')
-        
-        # Validate gpx_file_path before processing
-        if gpx_file_path is None:
-            logger.warning("No GPX file path provided in stats. Using default coordinates.")
-            latitude, longitude = 37.35, 126.93
-        else:
-            # Check if file exists and is not empty
-            if not gpx_file_path or not os.path.exists(gpx_file_path):
-                logger.warning(f"GPX file path is invalid or does not exist: {gpx_file_path}")
-                latitude, longitude = 37.35, 126.93
-            else:
-                latitude, longitude = self._extract_start_coordinates(gpx_file_path)
-        
-        # Get weather info
-        weather = self._get_weather_info(
-            latitude=latitude,
-            longitude=longitude
-        )
-        
-        # Load prompt template
-        prompt_template = self._load_prompt_template()
-        
-        # Extract date (default to current system date if missing)
-        activity_date = gpx_stats.get('date')
-        if not activity_date:
-            activity_date = datetime.now().strftime("%Y-%m-%d")
-            
-        # Prepare data dictionary for safe formatting
-        data = {
-            'distance': distance,
-            'duration': duration,
-            'pace_per_km': pace_per_km,
-            'speed': speed,
-            'weather': weather,
-            'date': activity_date
-        }
-        
-        # Format prompt with data using format_map for safety
-        try:
-            prompt = prompt_template.format_map(data)
-        except KeyError as e:
-            logger.error(f"Missing variable in prompt template: {e}")
-            # Fallback to basic format with all keys provided
-            prompt = prompt_template.format(
-                distance=distance,
-                duration=duration,
-                pace_per_km=pace_per_km,
-                speed=speed,
-                weather=weather,
-                date=activity_date
-            )
-        
-        # Call local LLM
-        analysis_result = self._call_llm(
-            prompt=prompt,
-            model_name=self.model_name,
-            api_endpoint=self.api_endpoint,
-            api_key=self.api_key
-        )
-        
-        if analysis_result:
-            return analysis_result
-        else:
-            logger.error("Local LLM returned invalid or no response.")
-            return {"title": "GPX Activity Analysis", "summary": "Local LLM failed to generate a valid response."}
-
-def create_analyzer(config):
-    """
-    Factory function to create the appropriate analyzer based on LLM_PROVIDER.
-    
-    Args:
-        config: ConfigManager instance containing LLM_PROVIDER setting
-        
-    Returns:
-        BaseAnalyzer instance (GeminiAnalyzer or LocalLLMAnalyzer)
-        
-    Raises:
-        ValueError: If LLM_PROVIDER is not supported
-    """
-    provider = config.LLM_PROVIDER
-    
-    if provider == 'gemini':
-        try:
-            logger.info("Creating GeminiAnalyzer...")
-            return GeminiAnalyzer()
-        except ValueError as e:
-            logger.error(f"Failed to create GeminiAnalyzer: {e}")
-            logger.warning("Falling back to LocalLLMAnalyzer (if available).")
-            return LocalLLMAnalyzer()
-    elif provider == 'local':
-        try:
-            logger.info("Creating LocalLLMAnalyzer...")
-            return LocalLLMAnalyzer()
-        except Exception as e:
-            logger.error(f"Failed to create LocalLLMAnalyzer: {e}")
-            logger.warning("No analyzer available. Analysis will be skipped.")
-            return None
-    else:
-        logger.error(f"Unsupported LLM_PROVIDER: {provider}")
-        logger.warning("Falling back to GeminiAnalyzer (if API key available).")
-        try:
-            return GeminiAnalyzer()
-        except ValueError:
-            logger.error("No valid LLM provider available. Analysis will be skipped.")
-            return None
+def create_analyzer(config=None):
+    """Always use Gemini for running analysis and publication."""
+    logger.info("Creating GeminiAnalyzer...")
+    return GeminiAnalyzer()

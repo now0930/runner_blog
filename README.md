@@ -1,173 +1,51 @@
-# GPX to WordPress Auto-Blogger
+# Telegram GPX 러닝 분석 블로그
 
-This project is an automated bot that processes GPX files (GPS tracking data), analyzes running records in Korean using LLMs (Gemini or Local LLM), fetches current weather information, and automatically publishes a blog post to WordPress.
+지정한 Telegram 채팅에 GPX 파일을 올리면 봇이 러닝 수치를 계산하고 **Gemini 3.8 Flash**로 기록 해석과 다음 훈련 제안을 작성한 뒤 WordPress에 게시합니다. 모델 선택 기능은 없으며 분석은 Gemini Developer API만 사용합니다.
 
-## Key Features
-- **GPX Data Analysis**: Parses GPX files to extract distance, duration, and pace.
-- **AI-Powered Running Analysis**: Uses Gemini or Local LLMs to interpret running records and suggest practical next steps based on the available data.
-- **Weather Integration**: Automatically fetches current weather data for the activity location; this may differ from conditions during the run.
-- **WordPress Automation**: Automatically creates and publishes posts to your WordPress site.
-- **Telegram Integration**: Receive and process GPX files directly via Telegram.
+## 설정과 실행
 
-## Installation & Setup
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/now0930/runner_blog.git
-   cd runner_blog
-   ```
-
-2. **Configure Environment Variables**:
-   Copy the example file and fill in your credentials:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your API keys and credentials
-   ```
-
-3. **Run with Docker**:
-   Use the production Compose file (the default `docker-compose.yml` starts Aider, not the bot):
-   ```bash
-   docker compose -f docker-compose.prod.yml up --build -d --force-recreate
-   ```
-
-## Usage
-
-1. **Start the Bot**: Ensure the container is running.
-2. **Send GPX File**: Send a `.gpx` file to the Telegram account associated with the `PHONE_NUMBER` configured in your `.env`.
-3. **Processing**: The bot will automatically:
-   - Download the file.
-   - Parse the GPX data.
-   - Generate a Korean running analysis using the configured LLM and `prompt_template.txt`.
-   - Publish the post to your WordPress site.
-
-## 러닝 분석 프롬프트
-
-Gemini와 Local LLM은 [prompt_template.txt](prompt_template.txt)를 공통으로 사용합니다.
-프롬프트는 한국어로 다음 내용을 작성하도록 지시합니다.
-
-- **기록 요약**: 거리(km), 시간(시·분·초), 평균 페이스(분:초/km), 속도(km/h)를 정리합니다.
-- **훈련 해석**: 거리와 지속 시간을 바탕으로 훈련의 의미를 설명합니다. 심박수나
-  주관적 운동 강도(RPE) 없이 평균 페이스만으로 실력이나 훈련 강도를 단정하지 않습니다.
-- **환경 해석**: 제공된 날씨만 참고하며, 현재 날씨와 러닝 당시 날씨를 구분합니다.
-- **다음 훈련 제안**: 피로도와 통증 여부를 고려한 실천 가능한 조언을 1~2개 제시합니다.
-
-구간별 페이스, 고도, 케이던스, 심박수, 칼로리, 과거 기록은 현재 프롬프트 입력에
-포함되지 않습니다. 이 정보가 필요한 페이스 변화나 기록 향상 여부를 추측하지 않도록
-지시하며, 누락되거나 유효하지 않거나 서로 모순되는 값은 해석을 제한하도록 합니다.
-
-### 입력 변수와 수정 방법
-
-`prompt_template.txt`의 지시문을 수정해 분석 스타일을 조절할 수 있습니다.
-아래 변수 이름과 단위를 유지하세요.
-
-| 변수 | 의미 및 입력 단위 |
-| --- | --- |
-| `distance` | 거리, m |
-| `duration` | 시간, 초 |
-| `pace_per_km` | 평균 페이스, 소수 단위 min/km (`5.50`은 5분 30초/km) |
-| `speed` | 속도, km/h |
-| `weather` | 현재 날씨 정보 문자열 |
-| `date` | 활동 일시, 없으면 시스템의 현재 날짜 |
-
-템플릿은 Python `str.format_map()`으로 치환됩니다. 변수는 `{distance:.2f}`처럼
-표기하고, JSON 예시 등 일반 중괄호는 `{{`와 `}}`로 이스케이프하세요.
-운영 Docker 환경에서는 수정한 파일이 반영되도록 컨테이너를 다시 빌드하고 재생성합니다.
+1. `.env.example`을 `.env`로 복사하고 Telegram, Gemini, WordPress 설정을 입력합니다. `.env`는 Git에 포함되지 않습니다.
+2. 운영 봇을 실행합니다. 첫 Telegram 로그인에는 인증 코드 입력이 필요할 수 있으므로 처음에는 `-d` 없이 실행합니다.
 
 ```bash
-docker compose -f docker-compose.prod.yml up --build -d --force-recreate
+cp .env.example .env
+docker compose -f docker-compose.prod.yml up --build --force-recreate runner-app
 ```
 
-### 출력 형식
-
-모델에는 `title`과 `summary`가 모두 문자열인 JSON 객체 하나만 반환하도록 요청합니다.
-`summary`에는 기록 요약, 훈련 해석, 환경, 다음 훈련 제안을 문단으로 담습니다.
-아래는 구조 예시입니다.
-
-```json
-{
-  "title": "러닝 분석 제목",
-  "summary": "러닝 기록 분석 및 다음 훈련 제안"
-}
-```
-
-## Gemini 오류 진단 및 키 교체
-
-`.env`에서 다음 항목을 설정합니다. 기존 `.env`는 Git 업데이트로 바뀌지 않으므로
-이전 모델명이 있으면 직접 변경하세요. 키를 저장소나 명령어 출력에 넣지 마세요.
-
-```dotenv
-GEMINI_API_KEY=새_프로젝트의_키
-AY_GEMINI_MODEL=gemini-3.6-flash
-AY_GEMINI_FALLBACK_MODEL=
-```
-
-운영 Compose는 키와 모델을 `env_file: .env`에서 직접 읽습니다.
-기존 `environment: GEMINI_API_KEY=${GEMINI_API_KEY}` 중복 설정을 제거하여
-셸에 남아 있는 이전 키가 `.env`의 키를 덮어쓰는 경로를 없앴습니다.
-Python 직접 실행에서는 명시적으로 설정된 프로세스 환경변수가 `.env`보다 우선합니다.
-봇은 `GEMINI_API_KEY`를 명시적으로 전달하고 Gemini Developer API를 사용합니다.
-`GOOGLE_API_KEY` 또는 Vertex AI 환경변수로 다른 키/백엔드가 선택되지 않습니다.
-
-업데이트한 코드 폴더에서 실행합니다:
+인증을 마친 뒤 백그라운드로 실행하거나 설정을 바꿨을 때는 다음 명령을 사용합니다.
 
 ```bash
-# 새 .env와 앱 코드로 봇 컨테이너 재생성
-# 최초 Telegram 로그인은 -d 없이 실행하여 인증 코드를 입력하세요.
-docker compose -f docker-compose.prod.yml up --build -d --force-recreate
+docker compose -f docker-compose.prod.yml up --build -d --force-recreate runner-app
+docker compose -f docker-compose.prod.yml logs -f --tail=50 runner-app
+```
 
-# 실행 중인 봇과 동일한 컨테이너의 키/모델 확인 (API 호출 없음)
+`.env`의 기본 모델은 `AY_GEMINI_MODEL=gemini-3.8-flash`입니다. `AY_GEMINI_FALLBACK_MODEL`은 기본적으로 비어 있으며, 설정했을 때 기본 모델이 HTTP 404를 반환하는 경우에만 시도합니다. 기존 `.env`는 Git 업데이트로 바뀌지 않으므로 모델 설정을 직접 확인하세요. 설정 변경은 컨테이너 **재생성** 후 반영됩니다.
+
+## GPX 전송과 게시 내용
+
+`.env`의 `CHAT_ID`에 지정한 Telegram 채팅에 `.gpx` 파일을 문서로 보냅니다. 봇은 파일을 내려받고 거리·운동 시간·평균 페이스, 1km 구간별 시간과 심박·케이던스·고도, 전체 심박·케이던스·고도 및 GPS 기록점 수를 계산합니다. 마지막 구간에는 1km 미만의 남은 거리를 표시합니다. GPX에 없는 값은 채워 넣지 않습니다.
+
+Gemini는 계산된 수치와 [러닝 분석 지시문](prompt_template.txt)을 받아 **제목, 기록 해석, 훈련 제안 1~3개**를 만듭니다. [게시 형식](report.py)은 수치 요약, 구간별 표, 해석, 훈련 제안, GPX 경로 지도로 구성됩니다. 수치와 표는 프로그램이 GPX에서 계산하며 Gemini가 임의로 만들지 않습니다. 심박 구간·운동 강도는 개인의 기준 정보가 없으면 단정하지 않습니다. 고도 범위는 누적 상승량이 아닙니다.
+
+현재 기온을 조회할 수 있지만 **달렸던 당시의 날씨는 아닐 수 있습니다**. Gemini 또는 WordPress 요청이 실패하면 GPX 파일을 보존하고 게시를 중단합니다. 원인을 해결한 뒤 해당 GPX를 Telegram에 다시 보내면 재처리됩니다. **같은 GPX를 다시 보내면 중복 글이 생길 수 있으므로** 이미 게시됐는지 먼저 확인하세요.
+
+프롬프트를 수정할 때는 기존 입력 변수(`distance`, `duration`, `pace_per_km`, `speed`, `weather`, `date`, `splits_text`, `heart_rate_text`, `cadence_text`, `elevation_text`)를 유지하세요. Python 형식 문자열이므로 JSON 예시의 중괄호는 `{{`와 `}}`로 씁니다. 수정 후 봇 컨테이너를 재생성합니다. 프롬프트를 읽지 못하거나 Gemini가 유효한 `title`·`summary`·`training` JSON을 반환하지 않으면 게시하지 않습니다.
+
+## Gemini 연결 확인
+
+개인 GPX를 보내거나 글을 게시하지 않는 짧은 진단입니다.
+
+```bash
 docker compose -f docker-compose.prod.yml exec runner-app python check_gemini.py --config-only
-
-# 짧은 실제 생성 요청: 정상 JSON까지 검증, Telegram/WordPress에는 게시하지 않음
 docker compose -f docker-compose.prod.yml exec runner-app python check_gemini.py
 ```
 
-봇이 아직 실행되지 않으면 다음으로 독립 진단할 수 있습니다:
+첫 명령은 모델과 키 지문만 확인합니다. 두 번째 명령은 실제 Gemini API로 짧은 JSON 생성 요청을 보냅니다. 키 원문은 출력하지 않습니다. HTTP 503·504 등 일시적인 서버 오류는 최대 3회 재시도하고, 계속 실패하면 게시하지 않습니다. HTTP 404는 모델명을, HTTP 400·401·403은 키·권한을, HTTP 429는 할당량 또는 결제 상태를 확인하세요. [Gemini 오류 안내](https://ai.google.dev/gemini-api/docs/troubleshooting)를 참고할 수 있습니다.
+
+## 테스트
 
 ```bash
-docker compose -f docker-compose.prod.yml build runner-app
-docker compose -f docker-compose.prod.yml run --rm --no-deps runner-app python check_gemini.py
+docker compose -f docker-compose.prod.yml run --rm --no-deps -T runner-app python -m unittest discover -s tests -v
 ```
 
-`restart`만 하면 변경된 환경변수가 반영되지 않을 수 있으므로 위의 재생성을 사용하세요.
-진단 결과는 키 원문 대신 SHA-256 앞 12자리 지문을 표시합니다. 키 교체 전후에
-지문이 달라지는지, 실제 실행 컨테이너와 새 컨테이너의 지문이 같은지 비교하세요.
-실제 생성 진단에는 소량의 API 사용량이 발생하며, 성공하면 `PASS`와 종료 코드 0,
-실패하면 원인 안내와 종료 코드 1을 반환합니다.
-
-- **402 / prepayment credits depleted**: 해당 키가 사용하는 프로젝트의 결제 계정에서
-  Gemini 선불 잔액을 확인해야 합니다. 같은 결제 계정을 공유하는 새 프로젝트를
-  만드는 것만으로는 해결되지 않을 수 있습니다. 키 지문이 예상과 같고 잔액도 있는데
-  계속 거부되면 Google 결제 지원에서 확인해야 하며 앱에서 결제 제한을 해제할 수는 없습니다.
-- **404**: 모델 사용 종료 또는 프로젝트에서 사용 불가입니다. 사용 가능한 모델로
-  `AY_GEMINI_MODEL`을 변경하세요. 선택적 fallback은 404일 때만 사용합니다.
-- **400 / 401 / 403**: API 키, 권한, API 제한 또는 요청 설정을 확인하세요.
-- **429**: 일반 할당량 초과와 선불 잔액 부족 메시지를 구분해서 표시합니다.
-- **500 / 502 / 503 / 504**: 일시적인 서버 오류는 같은 모델로 최대 3회 재시도합니다.
-  대기 시간은 2초, 4초, 8초에 각각 최대 1초의 무작위 지연을 더합니다.
-  SDK 자체 재시도는 비활성화하여 모델당 총 4회로 제한합니다.
-  모두 실패하면 게시하지 않고 GPX를 보존합니다. 잠시 후 해당 GPX를 Telegram으로
-  다시 보내세요. 503 자체는 API 키나 결제 오류를 의미하지 않습니다.
-  [Google 오류 해결 안내](https://ai.google.dev/gemini-api/docs/troubleshooting)를 참고하세요.
-
-Gemini 호출 실패, 빈 응답, 잘못된 JSON은 이제 게시를 중단합니다. 원본 GPX는
-다운로드 폴더에 남으며 해결 후 Telegram에서 다시 보내 재처리할 수 있습니다.
-이미 게시된 오류 글은 자동 수정하지 않습니다.
-
-2026-09-20 확인: 제공된 새 키로 `gemini-3.6-flash`의 실제 SDK JSON 생성이 성공했고,
-402는 재현되지 않았습니다. `gemini-2.5-flash` 요청은 신규 사용자 사용 불가 404를
-반환했습니다. 실제 운영 서버의 기존 키/컨테이너는 직접 조사하지 않았습니다.
-
-참고: [Google 결제 안내](https://ai.google.dev/gemini-api/docs/billing),
-[API 키 안내](https://ai.google.dev/gemini-api/docs/api-key),
-[Docker 환경변수 우선순위](https://docs.docker.com/compose/how-tos/environment-variables/envvars-precedence/).
-
-## Tests
-
-```bash
-python -m pip install -r requirements.txt
-python -m unittest discover -s tests -v
-```
-
-회귀 테스트는 API 호출 없이 결제/인증 오류, 모델 fallback, JSON 검증과
-분석 실패 시 WordPress 게시 차단을 확인합니다.
+테스트는 외부 API에 게시하지 않고 GPX 추출, 보고서, Gemini 오류 처리와 게시 중단 조건을 확인합니다.
